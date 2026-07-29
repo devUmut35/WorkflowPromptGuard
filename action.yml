@@ -1,0 +1,56 @@
+name: WorkflowPromptGuard
+description: Audit trust boundaries in AI-agent GitHub workflows
+author: Umutcan Altan
+
+branding:
+  icon: shield
+  color: purple
+
+inputs:
+  path:
+    description: Workflow file or repository root to scan
+    required: false
+    default: .
+  fail-on:
+    description: Lowest finding severity that fails the step
+    required: false
+    default: high
+  format:
+    description: Report format (console, json, markdown, or sarif)
+    required: false
+    default: console
+  output:
+    description: Optional report output path
+    required: false
+    default: ""
+  include-generated:
+    description: Scan generated *.lock.yml workflows
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Install WorkflowPromptGuard
+      shell: bash
+      env:
+        WPG_ACTION_PATH: ${{ github.action_path }}
+      run: python -m pip install --disable-pip-version-check "$WPG_ACTION_PATH"
+
+    - name: Scan agent workflow boundaries
+      shell: bash
+      env:
+        WPG_FAIL_ON: ${{ inputs.fail-on }}
+        WPG_FORMAT: ${{ inputs.format }}
+        WPG_INCLUDE_GENERATED: ${{ inputs.include-generated }}
+        WPG_OUTPUT: ${{ inputs.output }}
+        WPG_PATH: ${{ inputs.path }}
+      run: |
+        args=(scan --format "$WPG_FORMAT" --fail-on "$WPG_FAIL_ON")
+        if [[ "$WPG_INCLUDE_GENERATED" == "true" ]]; then
+          args+=(--include-generated)
+        fi
+        if [[ -n "$WPG_OUTPUT" ]]; then
+          args+=(--output "$WPG_OUTPUT")
+        fi
+        python -m workflow_prompt_guard "${args[@]}" -- "$WPG_PATH"

@@ -1,0 +1,109 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "workflow-prompt-guard"
+version = "0.1.0"
+description = "Offline boundary linter for AI-agent GitHub workflows"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [
+  { name = "Umutcan Altan" },
+]
+keywords = [
+  "agentic-workflows",
+  "appsec",
+  "github-actions",
+  "prompt-injection",
+  "security",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Security",
+  "Typing :: Typed",
+]
+dependencies = [
+  "PyYAML>=6.0.2,<7",
+]
+
+[project.optional-dependencies]
+dev = [
+  "bandit>=1.8.6,<2",
+  "build>=1.3,<2",
+  "mypy>=1.17,<2",
+  "pytest>=8.4,<10",
+  "pytest-cov>=6.2,<8",
+  "ruff>=0.12,<1",
+  "types-PyYAML>=6.0.12.20250516",
+]
+
+[project.scripts]
+workflow-prompt-guard = "workflow_prompt_guard.cli:main"
+wpg = "workflow_prompt_guard.cli:main"
+
+[project.urls]
+Documentation = "https://github.com/devUmut35/WorkflowPromptGuard#readme"
+Issues = "https://github.com/devUmut35/WorkflowPromptGuard/issues"
+Repository = "https://github.com/devUmut35/WorkflowPromptGuard"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/workflow_prompt_guard"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+  "B",
+  "C4",
+  "E",
+  "F",
+  "I",
+  "N",
+  "PERF",
+  "PIE",
+  "PL",
+  "PTH",
+  "RUF",
+  "SIM",
+  "UP",
+]
+ignore = ["PLR2004"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["PLR2004"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+packages = ["workflow_prompt_guard"]
+
+[tool.pytest.ini_options]
+addopts = "--strict-config --strict-markers --basetemp=.pytest-tmp"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["workflow_prompt_guard"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+fail_under = 90
+
+[tool.bandit]
+exclude_dirs = ["tests"]
+skips = ["B404"]

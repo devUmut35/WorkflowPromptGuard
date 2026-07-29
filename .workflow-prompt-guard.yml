@@ -1,0 +1,6 @@
+version: 1
+fail_on: high
+include_generated: false
+
+exclude: []
+ignore: []
