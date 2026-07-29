@@ -83,7 +83,7 @@ CRITICAL AI001 .github/workflows/assistant.yml:18:9
 
 ## GitHub Action
 
-Until the first release SHA is documented, use the version tag for evaluation:
+Pin the action to the immutable commit behind `v0.1.0`:
 
 ```yaml
 name: Agent workflow security
@@ -102,13 +102,12 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.13"
-      - uses: devUmut35/WorkflowPromptGuard@v0.1.0
+      - uses: devUmut35/WorkflowPromptGuard@ab613a765c4e44d65ef95a9e1a2d21dbcec79820 # v0.1.0
         with:
           fail-on: high
 ```
 
-For production use, replace `@v0.1.0` with the release's full commit SHA. GitHub documents that a
-full-length commit SHA is the only immutable action reference.
+GitHub documents that a full-length commit SHA is the only immutable action reference.
 
 ## Implemented rules
 
