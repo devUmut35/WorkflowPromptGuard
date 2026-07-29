@@ -133,7 +133,7 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.13"
-      - uses: devUmut35/WorkflowPromptGuard@fa3200de6633474721aa22a5918dcfe5da5043e1 # v0.2.0
+      - uses: devUmut35/WorkflowPromptGuard@5320af60205ab3e1bb549c5f0b6c01e657c7b729 # v0.2.0
         with:
           fail-on: high
 ```
