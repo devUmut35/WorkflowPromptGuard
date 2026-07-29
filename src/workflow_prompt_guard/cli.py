@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from collections.abc import Sequence
 from dataclasses import replace
@@ -13,6 +14,7 @@ from workflow_prompt_guard import __version__
 from workflow_prompt_guard.catalog import RULES, get_rule
 from workflow_prompt_guard.config import ConfigError, discover_config, load_config
 from workflow_prompt_guard.engine import scan
+from workflow_prompt_guard.issue_bot import prepare_issue_scan, summarize_artifact
 from workflow_prompt_guard.models import Severity
 from workflow_prompt_guard.reporters import FORMAT_NAMES, render
 
@@ -67,6 +69,24 @@ def _parser() -> argparse.ArgumentParser:
 
     explain_parser = subparsers.add_parser("explain", help="explain one rule")
     explain_parser.add_argument("rule_id", help="rule identifier, for example AI001")
+
+    bot_parser = subparsers.add_parser(
+        "issue-bot",
+        help="run the hosted issue scan bot stages",
+    )
+    bot_subparsers = bot_parser.add_subparsers(dest="bot_command", required=True)
+    prepare_parser = bot_subparsers.add_parser(
+        "prepare",
+        help="validate an issue event and prepare deterministic scan artifacts",
+    )
+    prepare_parser.add_argument("--event", type=Path, required=True)
+    prepare_parser.add_argument("--output-dir", type=Path, required=True)
+    summarize_parser = bot_subparsers.add_parser(
+        "summarize",
+        help="create an optional GitHub Models explanation from a sanitized artifact",
+    )
+    summarize_parser.add_argument("--input", type=Path, required=True)
+    summarize_parser.add_argument("--output", type=Path, required=True)
     return parser
 
 
@@ -151,6 +171,18 @@ def _explain_command(rule_id: str) -> int:
     return 0
 
 
+def _issue_bot_command(arguments: argparse.Namespace) -> int:
+    token = os.environ.get("GITHUB_TOKEN")
+    if not token:
+        print("GITHUB_TOKEN is required for the hosted issue bot", file=sys.stderr)
+        return 2
+    if arguments.bot_command == "prepare":
+        return prepare_issue_scan(arguments.event, arguments.output_dir, token=token)
+    if arguments.bot_command == "summarize":
+        return summarize_artifact(arguments.input, arguments.output, token=token)
+    return 2
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the command-line interface and return a process exit code."""
 
@@ -162,5 +194,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _rules_command(arguments.json)
     if arguments.command == "explain":
         return _explain_command(arguments.rule_id)
+    if arguments.command == "issue-bot":
+        return _issue_bot_command(arguments)
     parser.error(f"unknown command: {arguments.command}")
     return 2

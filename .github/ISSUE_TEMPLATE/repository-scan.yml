@@ -1,0 +1,28 @@
+name: Scan a public repository
+description: Ask WorkflowPromptGuard to inspect AI-agent workflow trust boundaries.
+title: "[Scan]: "
+labels:
+  - scan-request
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The bot reads only supported files directly under `.github/workflows` at the
+        target repository's current default-branch commit. It never executes target code.
+
+  - type: input
+    id: repository
+    attributes:
+      label: Public GitHub repository URL
+      description: Enter one public repository URL. Branches and subdirectories are not accepted.
+      placeholder: https://github.com/OWNER/REPOSITORY
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: acknowledgement
+    attributes:
+      label: Public report
+      options:
+        - label: I understand that the scan result will be posted publicly on this issue.
+          required: true

@@ -35,6 +35,37 @@ flowchart LR
 - Evidence traces explain the path that made a finding exploitable.
 - The default scan is deterministic, local-only, and needs no GitHub token or network access.
 
+## Hosted issue bot
+
+You can try WorkflowPromptGuard without installing anything:
+
+1. Open a new issue in this repository.
+2. Choose **Scan a public repository**.
+3. Enter exactly one URL such as `https://github.com/OWNER/REPOSITORY`.
+4. The bot pins the target's default branch to a commit, scans its workflow files, and posts the
+   result on the issue.
+
+The comment contains two deliberately separate sections:
+
+- **Deterministic findings** come from WorkflowPromptGuard's rules and remain the source of truth.
+- **AI-generated explanation** is an optional plain-language summary from GitHub Models.
+
+No separate API key is stored. GitHub Actions supplies a short-lived `GITHUB_TOKEN`, and GitHub
+Models provides free, rate-limited inference. If the free quota or model service is unavailable,
+the deterministic report is still posted.
+
+Every valid form submission receives an automatic deterministic scan. To prevent public issue
+spam from exhausting the free model quota, AI explanations run automatically for repository
+owners, members, and collaborators; a maintainer can approve another request with the
+`ai-approved` label.
+
+The hosted bot only supports public GitHub repositories. It fetches files directly under
+`.github/workflows` at an immutable commit SHA, never clones or executes target code, and never
+sends issue text or workflow source to the model. Only bounded rule IDs, severities, counts, and
+catalog-authored remediation text reach the AI explanation stage.
+
+See the [hosted issue bot documentation](docs/issue-bot.md) for its limits and security boundary.
+
 ## Quick start
 
 Install from the repository:

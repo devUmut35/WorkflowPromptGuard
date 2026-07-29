@@ -1,0 +1,175 @@
+name: Public repository scan bot
+
+on:
+  issues:
+    types: [opened, reopened, labeled]
+
+permissions: {}
+
+concurrency:
+  group: public-repository-scan-bot
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    name: Deterministic scan
+    if: >-
+      contains(github.event.issue.labels.*.name, 'scan-request') &&
+      (github.event.action != 'labeled' || github.event.label.name == 'ai-approved')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      PYTHONPATH: ${{ github.workspace }}/src
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: .github/issue-bot-requirements.txt
+      - name: Install the hash-pinned runtime dependency
+        run: >
+          python -m pip install
+          --disable-pip-version-check
+          --only-binary=:all:
+          --require-hashes
+          --requirement .github/issue-bot-requirements.txt
+      - name: Prepare the deterministic report
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >
+          python -m workflow_prompt_guard issue-bot prepare
+          --event "$GITHUB_EVENT_PATH"
+          --output-dir "$RUNNER_TEMP/wpg-scan"
+      - name: Transfer bounded scan artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: wpg-scan-${{ github.event.issue.number }}
+          path: ${{ runner.temp }}/wpg-scan
+          if-no-files-found: error
+          retention-days: 1
+
+  explain:
+    name: Optional AI explanation
+    needs: scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      PYTHONPATH: ${{ github.workspace }}/src
+    permissions:
+      actions: read
+      contents: read
+      models: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: .github/issue-bot-requirements.txt
+      - name: Install the hash-pinned runtime dependency
+        run: >
+          python -m pip install
+          --disable-pip-version-check
+          --only-binary=:all:
+          --require-hashes
+          --requirement .github/issue-bot-requirements.txt
+      - name: Receive the sanitized scan artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: wpg-scan-${{ github.event.issue.number }}
+          path: ${{ runner.temp }}/wpg-scan
+      - name: Ask GitHub Models for an explanation
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >
+          python -m workflow_prompt_guard issue-bot summarize
+          --input "$RUNNER_TEMP/wpg-scan/ai-input.json"
+          --output "$RUNNER_TEMP/wpg-ai/ai-summary.md"
+      - name: Transfer the optional explanation
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: wpg-ai-${{ github.event.issue.number }}
+          path: ${{ runner.temp }}/wpg-ai
+          if-no-files-found: error
+          retention-days: 1
+
+  comment:
+    name: Publish issue report
+    needs: [scan, explain]
+    if: always() && needs.scan.result == 'success' && needs.explain.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      actions: read
+      issues: write
+    steps:
+      - name: Receive the deterministic report
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: wpg-scan-${{ github.event.issue.number }}
+          path: ${{ runner.temp }}/wpg-scan
+      - name: Receive the optional explanation
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: wpg-ai-${{ github.event.issue.number }}
+          path: ${{ runner.temp }}/wpg-ai
+      - name: Create or update the bot comment
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          WPG_REPORT_PATH: ${{ runner.temp }}/wpg-scan/comment.md
+          WPG_AI_PATH: ${{ runner.temp }}/wpg-ai/ai-summary.md
+        with:
+          script: |
+            const fs = require("fs");
+            const marker = "<!-- workflow-prompt-guard:issue-report:v1 -->";
+            const placeholder = "<!-- workflow-prompt-guard:ai-summary -->";
+            const report = fs.readFileSync(process.env.WPG_REPORT_PATH, "utf8");
+            const ai = fs.readFileSync(process.env.WPG_AI_PATH, "utf8").trim();
+
+            if (!report.startsWith(marker) || !report.includes(placeholder)) {
+              core.setFailed("The scan artifact failed its marker validation.");
+              return;
+            }
+
+            const body = report.replace(placeholder, ai);
+            if (body.length > 60000) {
+              core.setFailed("The issue report exceeded its size limit.");
+              return;
+            }
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+            const existing = comments.find(
+              (comment) =>
+                comment.user?.login === "github-actions[bot]" &&
+                comment.body?.startsWith(marker),
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body,
+              });
+            }

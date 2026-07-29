@@ -23,6 +23,21 @@ coordinated after validation.
 
 ## Scanner scope
 
-WorkflowPromptGuard performs static, local file analysis. It does not execute workflows, resolve
-remote actions, call GitHub APIs, or test live infrastructure. A clean result is not a security
+The core WorkflowPromptGuard scanner performs static, local file analysis. It does not execute
+workflows, resolve remote actions, or test live infrastructure. A clean result is not a security
 guarantee.
+
+The hosted issue bot uses the GitHub API to read only supported files directly under a public
+repository's `.github/workflows` directory at a pinned commit. It does not clone repositories,
+follow symlinks, install target dependencies, or execute target code. Repository size, file count,
+individual file size, YAML structure, artifact size, and comment size are bounded.
+
+The optional GitHub Models stage receives only normalized rule identifiers, severities, counts,
+and catalog-authored remediation text. It never receives the issue body, workflow source, finding
+trace, token, or write capability. AI text is explicitly labeled as advisory; model failure falls
+back to the complete deterministic report.
+
+Issue-triggered jobs execute the trusted source tree directly and install only the hash-pinned
+PyYAML runtime wheel. Public requests always receive deterministic analysis, but AI inference is
+limited to trusted repository associations or the maintainer-controlled `ai-approved` label to
+protect the free model quota.
