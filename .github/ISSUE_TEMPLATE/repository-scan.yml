@@ -7,25 +7,13 @@ body:
   - type: markdown
     attributes:
       value: |
-        Bot, hedef deponun varsayılan dalı için belirlenen sabit commit'te, `.github/workflows`
-        dizininin doğrudan altındaki desteklenen dosyaları okur; hedef kodu hiçbir zaman çalıştırmaz.
+        **Ne işe yarar?** Herkese açık depolardaki `.github/workflows` dosyalarında AI ajanı güvenlik risklerini bulur.
+        **Nasıl çalışır?** Kodu çalıştırmaz; dosyaları okur ve sonucu bu issue'ya yazar.
+        **AI notu:** AI açıksa LLM7.io'ya yalnızca kısa, anonim bulgu özeti gider. Kod, token, issue metni ve depo bilgisi gönderilmez.
 
-        Yapay zekâ açıklaması etkinleştirilirse yalnızca normalize edilmiş `language`,
-        `scanned_files`, `counts` ve `rules` agregaları LLM7.io'nun anonim `default` rotasına,
-        `https://api.llm7.io/v1/chat/completions` adresine gönderilir. Depo kimliği, commit SHA,
-        issue metni, iş akışı kaynağı, dosya yolu, GitHub tokenı veya ayrı bir API anahtarı
-        gönderilmez. LLM7.io anonim kullanım verilerini analiz ve model iyileştirme için işleyebilir;
-        rota değişkendir ve hizmet garantisi yoktur. Bir hata oluşursa deterministik rapor korunur.
-
-        The bot reads only supported files directly under `.github/workflows` at the target
-        repository's pinned default-branch commit. It never executes target code.
-
-        If the AI explanation is enabled, only normalized `language`, `scanned_files`, `counts`,
-        and `rules` aggregates are sent to LLM7.io's anonymous `default` route at
-        `https://api.llm7.io/v1/chat/completions`. Repository identity, commit SHA, issue text,
-        workflow source, file paths, the GitHub token, and any separate API key are not sent.
-        LLM7.io may process anonymous usage data for analysis and model improvement; routing is
-        variable and has no service guarantee. The deterministic report is preserved on failure.
+        **What it does:** Finds AI-agent security risks in `.github/workflows` files of public repositories.
+        **How it works:** It never runs code; it reads files and posts the result to this issue.
+        **AI note:** When enabled, LLM7.io receives only a short, anonymous findings summary. No code, token, issue text, or repository identity is sent.
 
   - type: dropdown
     id: language
@@ -60,7 +48,7 @@ body:
     id: llm7_disclosure
     attributes:
       label: Harici yapay zekâ / External AI
-      description: Yukarıdaki LLM7.io veri açıklamasını onaylayın. / Acknowledge the LLM7.io data disclosure above.
+      description: LLM7.io veri notunu onaylayın. / Acknowledge the LLM7.io data note.
       options:
-        - label: AI etkinse LLM7.io'nun normalize özeti işleyebileceğini anlıyorum. / I understand LLM7.io may process the normalized summary when AI is enabled.
+        - label: AI açıksa LLM7.io'nun kısa bulgu özetini işlemesini onaylıyorum. / I understand LLM7.io may process the short findings summary when AI is enabled.
           required: true
