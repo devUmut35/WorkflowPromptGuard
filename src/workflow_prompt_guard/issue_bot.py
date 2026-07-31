@@ -273,20 +273,28 @@ def render_scan_comment(
     turkish = language is ReportLanguage.TURKISH
     lines = [
         BOT_MARKER,
-        "## WorkflowPromptGuard taraması" if turkish else "## WorkflowPromptGuard scan",
+        "## WorkflowPromptGuard - Tarama sonucu"
+        if turkish
+        else "## WorkflowPromptGuard - Scan result",
         "",
-        f"**{'Hedef' if turkish else 'Target'}:** {_target_link(snapshot)}",
+        f"**{'Taranan depo' if turkish else 'Repository scanned'}:** {_target_link(snapshot)}",
         (
-            f"**Taranan iş akışı dosyası:** {len(result.scanned_files)}"
+            f"**Taranan dosya:** {len(result.scanned_files)}"
             if turkish
             else f"**Workflows scanned:** {len(result.scanned_files)}"
         ),
-        "",
-        _summary_line(result, language),
-        "",
     ]
 
     if result.findings:
+        risk_summary_label = "Risk özeti" if turkish else "Risk summary"
+        risk_summary = _summary_line(result, language)
+        lines.extend(
+            [
+                "",
+                f"**{risk_summary_label}:** {risk_summary}",
+                "",
+            ]
+        )
         lines.extend(
             [
                 "### Deterministik bulgular" if turkish else "### Deterministic findings",
@@ -323,12 +331,18 @@ def render_scan_comment(
     elif not result.errors and result.scanned_files:
         lines.extend(
             [
+                "",
                 (
-                    "Tarayıcının mevcut kural kümesine göre bulgu bulunmadı. "
-                    "Bu sonuç bir güvenlik garantisi değildir."
+                    "**Sonuç:** ✅ Bilinen bir güvenlik riski bulunmadı."
                     if turkish
-                    else "No findings reached the scanner's rule set. "
-                    "This is not a security guarantee."
+                    else "**Result:** ✅ No known security risk was found."
+                ),
+                (
+                    "_Yeni bir workflow eklerseniz tekrar tarayın; bu sonuç her olası riski "
+                    "garanti etmez._"
+                    if turkish
+                    else "_Scan again after adding a workflow; this does not guarantee that every "
+                    "possible risk is found._"
                 ),
                 "",
             ]
@@ -336,6 +350,7 @@ def render_scan_comment(
     elif not result.scanned_files:
         lines.extend(
             [
+                "",
                 (
                     "`.github/workflows` dizininde desteklenen bir iş akışı dosyası bulunamadı."
                     if turkish
@@ -348,6 +363,7 @@ def render_scan_comment(
     if result.errors:
         lines.extend(
             [
+                "",
                 "### Ayrıştırılamayan dosyalar"
                 if turkish
                 else "### Files that could not be parsed",
@@ -370,29 +386,20 @@ def render_scan_comment(
         lines.append("")
 
     ai_gate_notice = (
-        "_Yapay zekâ açıklaması yalnızca isteği açan kullanıcının bu WorkflowPromptGuard "
-        "deposundaki ilişkisi `OWNER`, `MEMBER` veya `COLLABORATOR` olduğunda ya da depo "
-        "yöneticisi taramaya `ai-approved` etiketi eklediğinde sunulur._"
+        "_AI özeti yalnızca depo sahibi/katkıcısı için ya da yönetici `ai-approved` etiketi "
+        "eklediğinde açılır._"
         if turkish
-        else "_AI explanation is limited to users whose association with this "
-        "WorkflowPromptGuard repository is `OWNER`, `MEMBER`, or `COLLABORATOR`, or scans "
-        "carrying the maintainer-applied `ai-approved` label._"
+        else "_The AI summary is available only to repository owners/contributors or after a "
+        "maintainer adds the `ai-approved` label._"
     )
     deterministic_notice = (
-        "Yukarıdaki bulgular ve başarılı/başarısız değerlendirmesi deterministik tarayıcıdan "
-        "gelir. İsteğe bağlı yapay zekâ bölümü yalnızca açıklama amaçlıdır."
+        "_Tarama sonucu otomatik kurallardan gelir; AI özeti yalnızca kısa öneri sunar._"
         if turkish
-        else "The findings and pass/fail interpretation above come from the deterministic "
-        "scanner. The optional AI section is explanatory only."
+        else "_The result comes from automated rules; the AI summary only adds short advice._"
     )
-    lines.extend(
-        [
-            AI_PLACEHOLDER,
-            "",
-            *([ai_gate_notice, ""] if not ai_allowed else []),
-            deterministic_notice,
-        ]
-    )
+    lines.append(AI_PLACEHOLDER)
+    if result.findings:
+        lines.extend(["", *([ai_gate_notice, ""] if not ai_allowed else []), deterministic_notice])
     comment = "\n".join(lines).rstrip() + "\n"
     if len(comment) > MAX_COMMENT_LENGTH:
         raise IssueBotError("rendered issue comment exceeded its size limit")
@@ -487,7 +494,7 @@ def build_summary_input(
     rule_counts = Counter(finding.rule_id for finding in result.findings)
     return {
         "schema_version": 2,
-        "enabled": bool(result.scanned_files) and ai_allowed,
+        "enabled": bool(result.findings) and ai_allowed,
         "language": language.value,
         "repository": snapshot.repository.full_name,
         "commit_sha": snapshot.commit_sha,
@@ -572,23 +579,22 @@ def render_model_summary(
 
     if language is ReportLanguage.TURKISH:
         lines = [
-            "### Yapay zekâ tarafından oluşturulan açıklama",
+            "### AI özeti",
             "",
-            f"_{MODEL_PROVIDER} (`{summary.model}`) üzerinden oluşturuldu; yalnızca "
-            "bilgilendirme amaçlıdır._",
+            f"_{MODEL_PROVIDER} (`{summary.model}`) ile oluşturulan kısa öneri._",
             "",
             _safe_markdown(summary.overview),
         ]
-        priorities = "**Önerilen öncelikler:**"
+        priorities = "**Ne yapmalısınız?**"
     else:
         lines = [
-            "### AI-generated explanation",
+            "### AI summary",
             "",
-            f"_Generated through {MODEL_PROVIDER} (`{summary.model}`); advisory only._",
+            f"_Short advice generated with {MODEL_PROVIDER} (`{summary.model}`)._",
             "",
             _safe_markdown(summary.overview),
         ]
-        priorities = "**Suggested priorities:**"
+        priorities = "**What to do:**"
     if summary.recommendations:
         lines.extend(["", priorities, ""])
         lines.extend(f"- {_safe_markdown(item)}" for item in summary.recommendations)
@@ -602,18 +608,15 @@ def render_model_fallback(
 
     if language is ReportLanguage.TURKISH:
         lines = [
-            "### Yapay zekâ tarafından oluşturulan açıklama",
+            "### AI özeti",
             "",
-            f"_{MODEL_PROVIDER} kullanılamadı veya hız sınırına takıldı. "
-            "Deterministik tarama raporu "
-            "eksiksizdir ve esas alınması gereken kaynak olmaya devam eder._",
+            f"_{MODEL_PROVIDER} şu an yanıt veremedi. Yukarıdaki tarama sonucu geçerlidir._",
         ]
     else:
         lines = [
-            "### AI-generated explanation",
+            "### AI summary",
             "",
-            f"_{MODEL_PROVIDER} was unavailable or rate-limited. The deterministic scan report is "
-            "complete and remains the source of truth._",
+            f"_{MODEL_PROVIDER} could not respond. The scan result above remains valid._",
         ]
     return "\n".join(lines) + "\n"
 

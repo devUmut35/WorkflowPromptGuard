@@ -157,10 +157,11 @@ def test_client_sends_only_normalized_aggregates_and_validates_response() -> Non
     assert set(body) == {"model", "messages", "temperature", "max_tokens", "stream"}
     assert body["model"] == "default"
     assert body["temperature"] == 0
-    assert body["max_tokens"] == 500
+    assert body["max_tokens"] == 240
     assert body["stream"] is False
     assert "Return only one JSON object" in body["messages"][0]["content"]
-    assert "only in natural English" in body["messages"][0]["content"]
+    assert "Never give generic advice" in body["messages"][0]["content"]
+    assert "only in simple, natural English" in body["messages"][0]["content"]
     assert [message["role"] for message in body["messages"]] == ["system", "user"]
     prompt = body["messages"][1]["content"]
     assert set(json.loads(prompt)) == {"language", "scanned_files", "counts", "rules"}
@@ -188,7 +189,7 @@ def test_client_uses_only_the_validated_turkish_language_code() -> None:
     assert summary.overview == "İki güven sınırı riski bulundu."
     request = transport.requests[0]["payload"]
     assert isinstance(request, dict)
-    assert "only in natural Turkish" in request["messages"][0]["content"]
+    assert "only in simple, natural Turkish" in request["messages"][0]["content"]
     assert '"language":"tr"' in request["messages"][1]["content"]
 
 

@@ -247,7 +247,7 @@ def test_prepare_preserves_turkish_as_a_closed_set_presentation_choice(tmp_path:
 
     comment = (output / "comment.md").read_text(encoding="utf-8")
     ai_input = json.loads((output / "ai-input.json").read_text(encoding="utf-8"))
-    assert "WorkflowPromptGuard taraması" in comment
+    assert "WorkflowPromptGuard - Tarama sonucu" in comment
     assert "Deterministik bulgular" in comment
     assert "Güvenilmeyen içerik" in comment
     assert "Untrusted content reaches" not in comment
@@ -275,7 +275,7 @@ def test_external_request_scans_but_does_not_consume_model_quota(tmp_path: Path)
     ai_input = json.loads((output / "ai-input.json").read_text(encoding="utf-8"))
     assert "AI001" in comment
     assert "ai-approved" in comment
-    assert "Yapay zekâ açıklaması" in comment
+    assert "AI özeti" in comment
     assert ai_input["enabled"] is False
     assert ai_input["language"] == "tr"
 
@@ -355,8 +355,8 @@ def test_summarize_artifact_success_disabled_and_fallback(tmp_path: Path) -> Non
     )
 
     assert summarize_artifact(input_path, output, model_client=client) == 0
-    assert "AI-generated explanation" in output.read_text(encoding="utf-8")
-    assert "advisory only" in output.read_text(encoding="utf-8")
+    assert "AI summary" in output.read_text(encoding="utf-8")
+    assert "Short advice generated" in output.read_text(encoding="utf-8")
     assert "LLM7.io (`qwen3-235b`)" in output.read_text(encoding="utf-8")
 
     input_path.write_text(
@@ -370,7 +370,7 @@ def test_summarize_artifact_success_disabled_and_fallback(tmp_path: Path) -> Non
     failing = FakeSummaryClient(ModelSummaryError("quota details"))
     summarize_artifact(input_path, output, model_client=failing)
     fallback = output.read_text(encoding="utf-8")
-    assert "rate-limited" in fallback
+    assert "could not respond" in fallback
     assert "quota details" not in fallback
 
 
@@ -394,9 +394,9 @@ def test_summarize_artifact_renders_turkish_success_and_fallback(tmp_path: Path)
     summarize_artifact(input_path, output, model_client=client)
 
     success = output.read_text(encoding="utf-8")
-    assert "Yapay zekâ tarafından oluşturulan açıklama" in success
-    assert "Önerilen öncelikler" in success
-    assert "bilgilendirme amaçlıdır" in success
+    assert "AI özeti" in success
+    assert "Ne yapmalısınız?" in success
+    assert "kısa öneri" in success
     assert "LLM7.io (`qwen3-235b`)" in success
 
     summarize_artifact(
@@ -405,7 +405,7 @@ def test_summarize_artifact_renders_turkish_success_and_fallback(tmp_path: Path)
         model_client=FakeSummaryClient(ModelSummaryError("private quota detail")),
     )
     fallback = output.read_text(encoding="utf-8")
-    assert "hız sınırına takıldı" in fallback
+    assert "yanıt veremedi" in fallback
     assert "private quota detail" not in fallback
 
 
@@ -456,11 +456,11 @@ def test_error_and_fallback_templates_are_bilingual_and_keep_fixed_markers() -> 
     assert "Bu isteği işleyemedim" in turkish_request
     assert turkish_service.startswith(BOT_MARKER)
     assert "Hedef depodaki hiçbir kod çalıştırılmadı" in turkish_service
-    assert "Yapay zekâ tarafından oluşturulan açıklama" in turkish_fallback
+    assert "AI özeti" in turkish_fallback
 
     assert "I could not process" in render_request_error(ReportLanguage.ENGLISH)
     assert "could not be read safely" in render_service_error(ReportLanguage.ENGLISH)
-    assert "rate-limited" in render_model_fallback(ReportLanguage.ENGLISH)
+    assert "could not respond" in render_model_fallback(ReportLanguage.ENGLISH)
 
 
 def test_render_comment_handles_empty_clean_truncated_and_parse_results() -> None:
@@ -474,12 +474,14 @@ def test_render_comment_handles_empty_clean_truncated_and_parse_results() -> Non
     )
 
     clean = ScanResult(scanned_files=(".github/workflows/ci.yml",), findings=())
-    assert "No findings reached" in render_scan_comment(snapshot, clean)
-    assert "güvenlik garantisi değildir" in render_scan_comment(
+    assert "No known security risk was found" in render_scan_comment(snapshot, clean)
+    turkish_clean = render_scan_comment(
         snapshot,
         clean,
         language=ReportLanguage.TURKISH,
     )
+    assert "✅ Bilinen bir güvenlik riski bulunmadı" in turkish_clean
+    assert build_summary_input(snapshot, clean, language=ReportLanguage.TURKISH)["enabled"] is False
 
     finding = Finding(
         rule_id="AI001",

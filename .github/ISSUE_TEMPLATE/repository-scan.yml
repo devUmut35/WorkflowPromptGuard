@@ -9,11 +9,11 @@ body:
       value: |
         **Ne işe yarar?** Herkese açık depolardaki `.github/workflows` dosyalarında AI ajanı güvenlik risklerini bulur.
         **Nasıl çalışır?** Kodu çalıştırmaz; dosyaları okur ve sonucu bu issue'ya yazar.
-        **AI notu:** AI açıksa LLM7.io'ya yalnızca kısa, anonim bulgu özeti gider. Kod, token, issue metni ve depo bilgisi gönderilmez.
+        **AI notu:** Bulgu varsa LLM7.io kısa, anonim bir özet üretir. Kod, token, issue metni ve depo bilgisi gönderilmez.
 
         **What it does:** Finds AI-agent security risks in `.github/workflows` files of public repositories.
         **How it works:** It never runs code; it reads files and posts the result to this issue.
-        **AI note:** When enabled, LLM7.io receives only a short, anonymous findings summary. No code, token, issue text, or repository identity is sent.
+        **AI note:** When findings exist, LLM7.io produces a short, anonymous summary. No code, token, issue text, or repository identity is sent.
 
   - type: dropdown
     id: language
@@ -50,5 +50,5 @@ body:
       label: Harici yapay zekâ / External AI
       description: LLM7.io veri notunu onaylayın. / Acknowledge the LLM7.io data note.
       options:
-        - label: AI açıksa LLM7.io'nun kısa bulgu özetini işlemesini onaylıyorum. / I understand LLM7.io may process the short findings summary when AI is enabled.
+        - label: Bulgu varsa LLM7.io'nun kısa bulgu özetini işlemesini onaylıyorum. / I understand LLM7.io may process the short findings summary when findings exist.
           required: true
