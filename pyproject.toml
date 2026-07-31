@@ -66,6 +66,7 @@ line-length = 100
 src = ["src", "tests"]
 
 [tool.ruff.lint]
+allowed-confusables = ["ı"]
 select = [
   "B",
   "C4",

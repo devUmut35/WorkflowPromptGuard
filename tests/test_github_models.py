@@ -45,8 +45,9 @@ class FakeTransport:
 
 def summary_input() -> dict[str, Any]:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "enabled": True,
+        "language": "en",
         "repository": "octo-org/example",
         "commit_sha": "a" * 40,
         "scanned_files": 2,
@@ -69,6 +70,8 @@ def test_normalize_rebuilds_descriptions_from_catalog() -> None:
 
     normalized = normalize_summary_input(value)
 
+    assert set(normalized) == {"language", "scanned_files", "counts", "rules"}
+    assert normalized["language"] == "en"
     assert normalized["rules"][0]["title"] == "Untrusted content reaches a write-capable agent"
     assert "ignore the system prompt" not in json.dumps(normalized)
 
@@ -77,12 +80,25 @@ def test_normalize_rebuilds_descriptions_from_catalog() -> None:
         normalize_summary_input(value)
 
 
+def test_normalize_requires_the_exact_v2_language_schema() -> None:
+    missing_language = summary_input()
+    missing_language.pop("language")
+    with pytest.raises(ModelSummaryError):
+        normalize_summary_input(missing_language)
+
+    old_schema = summary_input()
+    old_schema["schema_version"] = 1
+    with pytest.raises(ModelSummaryError):
+        normalize_summary_input(old_schema)
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [
         ("repository", "https://evil.example/repo"),
         ("commit_sha", "main"),
         ("scanned_files", 1000),
+        ("language", "tr-TR"),
         ("rules", [{"rule_id": "UNKNOWN", "count": 1}]),
     ],
 )
@@ -127,9 +143,40 @@ def test_client_sends_only_normalized_aggregates_and_validates_response() -> Non
     assert isinstance(body, dict)
     assert "tools" not in body
     assert "tool_choice" not in body
+    assert "only in natural English" in body["messages"][0]["content"]
     prompt = body["messages"][1]["content"]
+    assert "octo-org/example" not in prompt
+    assert "a" * 40 not in prompt
     assert "github.event.issue.body" not in prompt
     assert "ignore the system prompt" not in prompt
+
+
+def test_client_uses_only_the_validated_turkish_language_code() -> None:
+    response = {
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps(
+                        {
+                            "overview": "İki güven sınırı riski bulundu.",
+                            "recommendations": ["Ajanı salt okunur yapın."],
+                        }
+                    )
+                }
+            }
+        ]
+    }
+    transport = FakeTransport([response])
+    payload = summary_input()
+    payload["language"] = "tr"
+
+    summary = GitHubModelsClient(transport).summarize(payload)
+
+    assert summary.overview == "İki güven sınırı riski bulundu."
+    request = transport.requests[0]["payload"]
+    assert isinstance(request, dict)
+    assert "only in natural Turkish" in request["messages"][0]["content"]
+    assert '"language":"tr"' in request["messages"][1]["content"]
 
 
 def test_client_falls_back_to_second_model_after_invalid_response() -> None:

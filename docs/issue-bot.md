@@ -1,24 +1,27 @@
 # Hosted issue bot
 
+**English** | [Türkçe](issue-bot.tr.md)
+
 The hosted bot lets a visitor scan one public GitHub repository from a structured issue form.
 It is a convenience layer around the same deterministic scanner used by the CLI.
 
 ## Request flow
 
-1. Select **Scan a public repository** on the new-issue page.
-2. Enter exactly one `https://github.com/OWNER/REPOSITORY` URL on its own line.
-3. Submit the issue. The form adds the `scan-request` label.
-4. The bot resolves the target's default branch to an immutable commit SHA.
-5. A deterministic report and, when available, an AI-generated explanation are posted as one bot
-   comment.
+1. Select **Herkese açık depoyu tara / Scan a public repository** on the new-issue page.
+2. Choose **Türkçe** or **English** as the report language.
+3. Enter exactly one `https://github.com/OWNER/REPOSITORY` URL on its own line.
+4. Submit the issue. The form adds the `scan-request` label.
+5. The bot resolves the target's default branch to an immutable commit SHA.
+6. A deterministic report and, when available, an AI-generated explanation are posted in the
+   selected language as one bot comment.
 
 Reopening the issue reruns the scan and updates the existing bot comment when it is among the
 first 100 comments.
 
 Deterministic scans run automatically for every valid form submission. To protect the free model
-quota from public issue spam, AI explanations run automatically only for repository owners,
-members, and collaborators. A maintainer can enable AI for another request by applying the
-`ai-approved` label.
+quota from public issue spam, AI explanations run automatically only when the requester's
+association with this WorkflowPromptGuard repository is `OWNER`, `MEMBER`, or `COLLABORATOR`. A
+maintainer can enable AI for another request by applying the `ai-approved` label.
 
 ## Authentication and cost
 
@@ -31,8 +34,8 @@ usage. When the free quota is unavailable or GitHub Models rejects a request, th
 complete deterministic report with a short fallback notice.
 
 The bot imports its trusted source tree directly and installs only a version- and hash-pinned
-PyYAML wheel on the fixed Linux/Python runner. It does not resolve build dependencies during an
-issue-triggered job.
+PyYAML wheel on a GitHub-hosted Linux runner with Python 3.13. It does not resolve build
+dependencies during an issue-triggered job.
 
 ## Security controls
 
@@ -45,6 +48,8 @@ issue-triggered job.
   never executed.
 - YAML source size, nesting, nodes, aliases, and expanded graph traversal are bounded.
 - Raw issue text, workflow source, finding messages, traces, and paths are not sent to the model.
+- The selected language is reduced to the closed set `tr` or `en`; raw form text is not sent to
+  the model.
 - The model receives catalog-backed rule IDs, severities, counts, and remediation text only.
 - The scan, model, and comment jobs have separate least-privilege tokens.
 - Model output is schema-checked, length-limited, mention-neutralized, and never used as a command,

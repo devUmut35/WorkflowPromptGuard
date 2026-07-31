@@ -6,6 +6,13 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Turkish README and hosted-bot documentation with reciprocal language navigation.
+- A required Turkish/English report selector for public scan issues.
+- Localized deterministic reports, safe error messages, model instructions, AI provenance, and
+  quota fallback while preserving stable rule IDs and machine-facing output.
+
 ## [0.2.0] - 2026-07-29
 
 ### Added
@@ -17,8 +24,8 @@ The project follows [Semantic Versioning](https://semver.org/).
 - Commit-pinned retrieval of only public `.github/workflows` files through the GitHub API.
 - Bounded artifacts, prompt-safe rule aggregates, idempotent comments, and deterministic fallback
   when AI inference is unavailable.
-- Automatic deterministic scans for public requests with collaborator or maintainer approval
-  gates protecting the free AI quota.
+- Automatic deterministic scans for all valid public requests, with AI explanations gated by
+  trusted author association or maintainer approval to protect the free model quota.
 
 ### Security
 

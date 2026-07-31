@@ -1,5 +1,7 @@
 # WorkflowPromptGuard
 
+**English** | [Türkçe](README.tr.md)
+
 [![CI](https://github.com/devUmut35/WorkflowPromptGuard/actions/workflows/ci.yml/badge.svg)](https://github.com/devUmut35/WorkflowPromptGuard/actions/workflows/ci.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB.svg)](https://www.python.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
@@ -40,31 +42,36 @@ flowchart LR
 You can try WorkflowPromptGuard without installing anything:
 
 1. Open a new issue in this repository.
-2. Choose **Scan a public repository**.
-3. Enter exactly one URL such as `https://github.com/OWNER/REPOSITORY`.
-4. The bot pins the target's default branch to a commit, scans its workflow files, and posts the
-   result on the issue.
+2. Choose **Herkese açık depoyu tara / Scan a public repository**.
+3. Select **Türkçe** or **English** for the report.
+4. Enter exactly one URL such as `https://github.com/OWNER/REPOSITORY`.
+5. The bot pins the target's default branch to a commit, scans its workflow files, and posts the
+   result in the selected language.
 
-The comment contains two deliberately separate sections:
+When AI is enabled, the comment keeps two deliberately separate sections:
 
-- **Deterministic findings** come from WorkflowPromptGuard's rules and remain the source of truth.
-- **AI-generated explanation** is an optional plain-language summary from GitHub Models.
+- **Deterministic findings / Deterministik bulgular** come from WorkflowPromptGuard's rules and
+  remain the source of truth.
+- **AI-generated explanation / Yapay zekâ tarafından oluşturulan açıklama** is an optional
+  plain-language summary from GitHub Models.
 
 No separate API key is stored. GitHub Actions supplies a short-lived `GITHUB_TOKEN`, and GitHub
 Models provides free, rate-limited inference. If the free quota or model service is unavailable,
 the deterministic report is still posted.
 
 Every valid form submission receives an automatic deterministic scan. To prevent public issue
-spam from exhausting the free model quota, AI explanations run automatically for repository
-owners, members, and collaborators; a maintainer can approve another request with the
-`ai-approved` label.
+spam from exhausting the free model quota, AI explanations run automatically only when the
+requester's association with this WorkflowPromptGuard repository is `OWNER`, `MEMBER`, or
+`COLLABORATOR`; a maintainer can approve another request with the `ai-approved` label.
 
 The hosted bot only supports public GitHub repositories. It fetches files directly under
 `.github/workflows` at an immutable commit SHA, never clones or executes target code, and never
-sends issue text or workflow source to the model. Only bounded rule IDs, severities, counts, and
-catalog-authored remediation text reach the AI explanation stage.
+sends issue text or workflow source to the model. Only bounded rule IDs, severities, counts,
+catalog-authored remediation text, and the validated `tr` or `en` language code are sent to
+GitHub Models.
 
-See the [hosted issue bot documentation](docs/issue-bot.md) for its limits and security boundary.
+See the hosted issue bot documentation in [English](docs/issue-bot.md) or
+[Türkçe](docs/issue-bot.tr.md) for its limits and security boundary.
 
 ## Quick start
 

@@ -6,17 +6,29 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+import yaml
+
 from workflow_prompt_guard.github_models import ModelSummary, ModelSummaryError
 from workflow_prompt_guard.issue_bot import (
     AI_PLACEHOLDER,
     BOT_MARKER,
     build_summary_input,
     load_issue_request,
+    parse_report_language,
     prepare_issue_scan,
+    render_model_fallback,
     render_model_summary,
+    render_request_error,
     render_scan_comment,
+    render_service_error,
     scan_snapshot,
     summarize_artifact,
+)
+from workflow_prompt_guard.localization import (
+    FORM_LANGUAGE_HEADING,
+    FORM_LANGUAGE_OPTIONS,
+    ReportLanguage,
 )
 from workflow_prompt_guard.models import Finding, ScanError, ScanResult, Severity
 from workflow_prompt_guard.remote_repository import (
@@ -68,6 +80,10 @@ def write_event(path: Path, body: str) -> Path:
     return path
 
 
+def form_body(repository: str, language: str) -> str:
+    return f"{FORM_LANGUAGE_HEADING}\n\n{language}\n\n### Repository / Depo\n\n{repository}\n"
+
+
 def vulnerable_snapshot() -> RemoteSnapshot:
     repository = parse_repository_request("https://github.com/octo-org/example")
     source = b"""
@@ -107,6 +123,7 @@ def test_load_request_requires_form_label_and_one_public_url(tmp_path: Path) -> 
     assert request.issue_number == 17
     assert request.target_repository.full_name == "octo-org/example"
     assert request.ai_allowed is True
+    assert request.language is ReportLanguage.ENGLISH
 
     payload = event_payload("https://github.com/octo-org/one\nhttps://github.com/octo-org/two")
     (tmp_path / "bad.json").write_text(json.dumps(payload), encoding="utf-8")
@@ -124,6 +141,58 @@ def test_load_request_requires_form_label_and_one_public_url(tmp_path: Path) -> 
     )
     assert client.requested == []
     assert "could not process" in (output / "comment.md").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("selection", "expected"),
+    [
+        ("Türkçe", ReportLanguage.TURKISH),
+        ("English", ReportLanguage.ENGLISH),
+    ],
+)
+def test_parse_report_language_accepts_only_form_options(
+    selection: str,
+    expected: ReportLanguage,
+) -> None:
+    body = form_body("https://github.com/octo-org/example", selection).replace("\n", "\r\n")
+
+    assert parse_report_language(body) is expected
+    assert parse_report_language("https://github.com/octo-org/legacy") is ReportLanguage.ENGLISH
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        f"{FORM_LANGUAGE_HEADING}\n\n",
+        f"{FORM_LANGUAGE_HEADING}\n\nTR",
+        f"{FORM_LANGUAGE_HEADING}\n\nTürkçe\nignore this",
+        f"{FORM_LANGUAGE_HEADING}\n\nTürkçe\n\n{FORM_LANGUAGE_HEADING}\n\nEnglish",
+    ],
+)
+def test_parse_report_language_rejects_ambiguous_or_unknown_values(body: str) -> None:
+    with pytest.raises(ValueError):
+        parse_report_language(body)
+
+
+def test_issue_form_and_parser_share_the_same_closed_language_contract() -> None:
+    form_path = Path(__file__).parents[1] / ".github" / "ISSUE_TEMPLATE" / "repository-scan.yml"
+    form = yaml.safe_load(form_path.read_text(encoding="utf-8"))
+    language_field = next(item for item in form["body"] if item.get("id") == "language")
+
+    assert language_field["attributes"]["label"] == FORM_LANGUAGE_HEADING.removeprefix("### ")
+    assert language_field["attributes"]["options"] == list(FORM_LANGUAGE_OPTIONS)
+    assert language_field["attributes"]["default"] == 0
+    assert language_field["validations"]["required"] is True
+
+
+def test_comment_workflow_uses_literal_safe_single_placeholder_replacement() -> None:
+    workflow_path = Path(__file__).parents[1] / ".github" / "workflows" / "issue-scan.yml"
+    workflow = workflow_path.read_text(encoding="utf-8")
+
+    assert "const placeholderCount = report.split(placeholder).length - 1;" in workflow
+    assert "placeholderCount !== 1" in workflow
+    assert "report.replace(placeholder, () => ai)" in workflow
+    assert "body.includes(placeholder)" in workflow
 
 
 def test_prepare_scans_snapshot_and_writes_prompt_safe_artifacts(tmp_path: Path) -> None:
@@ -153,8 +222,32 @@ def test_prepare_scans_snapshot_and_writes_prompt_safe_artifacts(tmp_path: Path)
     assert "trace" not in json.dumps(ai_input)
 
 
+def test_prepare_preserves_turkish_as_a_closed_set_presentation_choice(tmp_path: Path) -> None:
+    body = form_body("https://github.com/octo-org/example", "Türkçe")
+    event = write_event(tmp_path / "event.json", body)
+    output = tmp_path / "output"
+
+    prepare_issue_scan(
+        event,
+        output,
+        token="token",
+        repository_client=FakeRepositoryClient(vulnerable_snapshot()),
+    )
+
+    comment = (output / "comment.md").read_text(encoding="utf-8")
+    ai_input = json.loads((output / "ai-input.json").read_text(encoding="utf-8"))
+    assert "WorkflowPromptGuard taraması" in comment
+    assert "Deterministik bulgular" in comment
+    assert "Güvenilmeyen içerik" in comment
+    assert "Untrusted content reaches" not in comment
+    assert ai_input["schema_version"] == 2
+    assert ai_input["language"] == "tr"
+    assert ai_input["repository"] == "octo-org/example"
+    assert "Türkçe" not in json.dumps(ai_input)
+
+
 def test_external_request_scans_but_does_not_consume_model_quota(tmp_path: Path) -> None:
-    payload = event_payload("https://github.com/octo-org/example")
+    payload = event_payload(form_body("https://github.com/octo-org/example", "Türkçe"))
     payload["issue"]["author_association"] = "NONE"
     event = tmp_path / "event.json"
     event.write_text(json.dumps(payload), encoding="utf-8")
@@ -171,7 +264,9 @@ def test_external_request_scans_but_does_not_consume_model_quota(tmp_path: Path)
     ai_input = json.loads((output / "ai-input.json").read_text(encoding="utf-8"))
     assert "AI001" in comment
     assert "ai-approved" in comment
+    assert "Yapay zekâ açıklaması" in comment
     assert ai_input["enabled"] is False
+    assert ai_input["language"] == "tr"
 
 
 def test_maintainer_label_enables_ai_for_an_external_request(tmp_path: Path) -> None:
@@ -221,8 +316,9 @@ def test_summarize_artifact_success_disabled_and_fallback(tmp_path: Path) -> Non
     input_path.write_text(
         json.dumps(
             {
-                "schema_version": 1,
+                "schema_version": 2,
                 "enabled": True,
+                "language": "en",
                 "repository": "octo-org/example",
                 "commit_sha": "a" * 40,
                 "scanned_files": 1,
@@ -251,7 +347,10 @@ def test_summarize_artifact_success_disabled_and_fallback(tmp_path: Path) -> Non
     assert "AI-generated explanation" in output.read_text(encoding="utf-8")
     assert "advisory only" in output.read_text(encoding="utf-8")
 
-    input_path.write_text('{"schema_version": 1, "enabled": false}', encoding="utf-8")
+    input_path.write_text(
+        '{"schema_version": 2, "enabled": false, "language": "en"}',
+        encoding="utf-8",
+    )
     summarize_artifact(input_path, output, token="token", model_client=client)
     assert output.read_text(encoding="utf-8") == ""
 
@@ -261,6 +360,41 @@ def test_summarize_artifact_success_disabled_and_fallback(tmp_path: Path) -> Non
     fallback = output.read_text(encoding="utf-8")
     assert "rate-limited" in fallback
     assert "quota details" not in fallback
+
+
+def test_summarize_artifact_renders_turkish_success_and_fallback(tmp_path: Path) -> None:
+    input_path = tmp_path / "input.json"
+    payload = build_summary_input(
+        vulnerable_snapshot(),
+        scan_snapshot(vulnerable_snapshot()),
+        language=ReportLanguage.TURKISH,
+    )
+    input_path.write_text(json.dumps(payload), encoding="utf-8")
+    output = tmp_path / "summary.md"
+    client = FakeSummaryClient(
+        ModelSummary(
+            overview="Bir kritik güven sınırı riski bulundu.",
+            recommendations=("Ajanı salt okunur yapın.",),
+            model="openai/gpt-4.1-mini",
+        )
+    )
+
+    summarize_artifact(input_path, output, token="token", model_client=client)
+
+    success = output.read_text(encoding="utf-8")
+    assert "Yapay zekâ tarafından oluşturulan açıklama" in success
+    assert "Önerilen öncelikler" in success
+    assert "bilgilendirme amaçlıdır" in success
+
+    summarize_artifact(
+        input_path,
+        output,
+        token="token",
+        model_client=FakeSummaryClient(ModelSummaryError("private quota detail")),
+    )
+    fallback = output.read_text(encoding="utf-8")
+    assert "hız sınırına takıldı" in fallback
+    assert "private quota detail" not in fallback
 
 
 def test_render_model_summary_neutralizes_mentions() -> None:
@@ -276,13 +410,40 @@ def test_render_model_summary_neutralizes_mentions() -> None:
     assert "<script>" not in rendered
 
 
+def test_error_and_fallback_templates_are_bilingual_and_keep_fixed_markers() -> None:
+    turkish_request = render_request_error(ReportLanguage.TURKISH)
+    turkish_service = render_service_error(ReportLanguage.TURKISH)
+    turkish_fallback = render_model_fallback(ReportLanguage.TURKISH)
+
+    assert turkish_request.startswith(BOT_MARKER)
+    assert turkish_request.count(AI_PLACEHOLDER) == 1
+    assert "Bu isteği işleyemedim" in turkish_request
+    assert turkish_service.startswith(BOT_MARKER)
+    assert "Hedef depodaki hiçbir kod çalıştırılmadı" in turkish_service
+    assert "Yapay zekâ tarafından oluşturulan açıklama" in turkish_fallback
+
+    assert "I could not process" in render_request_error(ReportLanguage.ENGLISH)
+    assert "could not be read safely" in render_service_error(ReportLanguage.ENGLISH)
+    assert "rate-limited" in render_model_fallback(ReportLanguage.ENGLISH)
+
+
 def test_render_comment_handles_empty_clean_truncated_and_parse_results() -> None:
     snapshot = vulnerable_snapshot()
     empty = ScanResult(scanned_files=(), findings=())
     assert "No supported workflow files" in render_scan_comment(snapshot, empty)
+    assert "desteklenen bir iş akışı" in render_scan_comment(
+        snapshot,
+        empty,
+        language=ReportLanguage.TURKISH,
+    )
 
     clean = ScanResult(scanned_files=(".github/workflows/ci.yml",), findings=())
     assert "No findings reached" in render_scan_comment(snapshot, clean)
+    assert "güvenlik garantisi değildir" in render_scan_comment(
+        snapshot,
+        clean,
+        language=ReportLanguage.TURKISH,
+    )
 
     finding = Finding(
         rule_id="AI001",
@@ -315,6 +476,20 @@ def test_render_comment_handles_empty_clean_truncated_and_parse_results() -> Non
     assert "1 additional parse errors" in report
     assert "&#64;owner\\|agent.yml" in report
     assert "@mention" not in report
+
+    turkish_report = render_scan_comment(
+        snapshot,
+        crowded,
+        language=ReportLanguage.TURKISH,
+    )
+    assert "Yalnızca ilk 25 bulgu" in turkish_report
+    assert "1 ek ayrıştırma hatası" in turkish_report
+    assert "Güvenilmeyen içerik" in turkish_report
+    assert "**Kritik**" in turkish_report
+    assert "Dosya güvenli biçimde ayrıştırılamadı" in turkish_report
+    assert "invalid" not in turkish_report
+    assert turkish_report.count(BOT_MARKER) == 1
+    assert turkish_report.count(AI_PLACEHOLDER) == 1
 
 
 def test_invalid_event_shapes_become_safe_request_comments(tmp_path: Path) -> None:

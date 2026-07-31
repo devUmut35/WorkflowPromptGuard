@@ -129,12 +129,17 @@ jobs:
             const report = fs.readFileSync(process.env.WPG_REPORT_PATH, "utf8");
             const ai = fs.readFileSync(process.env.WPG_AI_PATH, "utf8").trim();
 
-            if (!report.startsWith(marker) || !report.includes(placeholder)) {
+            const placeholderCount = report.split(placeholder).length - 1;
+            if (!report.startsWith(marker) || placeholderCount !== 1) {
               core.setFailed("The scan artifact failed its marker validation.");
               return;
             }
 
-            const body = report.replace(placeholder, ai);
+            const body = report.replace(placeholder, () => ai);
+            if (body.includes(placeholder)) {
+              core.setFailed("The composed report failed its marker validation.");
+              return;
+            }
             if (body.length > 60000) {
               core.setFailed("The issue report exceeded its size limit.");
               return;

@@ -1,5 +1,5 @@
-name: Scan a public repository
-description: Ask WorkflowPromptGuard to inspect AI-agent workflow trust boundaries.
+name: Herkese açık depoyu tara / Scan a public repository
+description: Yapay zekâ ajanı iş akışlarındaki güven sınırlarını denetleyin. / Inspect AI-agent workflow trust boundaries.
 title: "[Scan]: "
 labels:
   - scan-request
@@ -7,14 +7,29 @@ body:
   - type: markdown
     attributes:
       value: |
-        The bot reads only supported files directly under `.github/workflows` at the
-        target repository's current default-branch commit. It never executes target code.
+        Bot, hedef deponun varsayılan dalı için belirlenen sabit commit'te, `.github/workflows`
+        dizininin doğrudan altındaki desteklenen dosyaları okur; hedef kodu hiçbir zaman çalıştırmaz.
+
+        The bot reads only supported files directly under `.github/workflows` at the target
+        repository's pinned default-branch commit. It never executes target code.
+
+  - type: dropdown
+    id: language
+    attributes:
+      label: Rapor dili / Report language
+      description: Bot yorumunun dilini seçin. / Choose the language of the bot comment.
+      options:
+        - Türkçe
+        - English
+      default: 0
+    validations:
+      required: true
 
   - type: input
     id: repository
     attributes:
-      label: Public GitHub repository URL
-      description: Enter one public repository URL. Branches and subdirectories are not accepted.
+      label: Herkese açık GitHub deposunun URL'si / Public GitHub repository URL
+      description: Tek bir herkese açık depo URL'si girin; dal ve alt dizin adresleri kabul edilmez. / Enter one public repository URL; branches and subdirectories are not accepted.
       placeholder: https://github.com/OWNER/REPOSITORY
     validations:
       required: true
@@ -22,7 +37,7 @@ body:
   - type: checkboxes
     id: acknowledgement
     attributes:
-      label: Public report
+      label: Herkese açık rapor / Public report
       options:
-        - label: I understand that the scan result will be posted publicly on this issue.
+        - label: Tarama sonucunun bu issue'da herkese açık yayımlanacağını anlıyorum. / I understand that the scan result will be posted publicly on this issue.
           required: true
