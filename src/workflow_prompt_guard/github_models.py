@@ -58,6 +58,10 @@ _SUMMARY_KEYS = {
 class ModelSummaryError(ValueError):
     """The summary input or model response was not valid."""
 
+    def __init__(self, message: str, *, category: str = "validation") -> None:
+        super().__init__(message)
+        self.category = category
+
 
 @dataclass(frozen=True)
 class ModelSummary:
@@ -292,5 +296,11 @@ class CloudModelsClient:
                 api_version=MODELS_API_VERSION,
             )
             return _parse_response(response)
-        except (GitHubServiceError, ModelSummaryError) as exc:
-            raise ModelSummaryError("cloud AI summary was unavailable") from exc
+        except GitHubServiceError as exc:
+            raise ModelSummaryError(
+                "cloud AI summary was unavailable", category="transport"
+            ) from exc
+        except ModelSummaryError as exc:
+            raise ModelSummaryError(
+                "cloud AI summary was unavailable", category="validation"
+            ) from exc

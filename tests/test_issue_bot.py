@@ -409,6 +409,30 @@ def test_summarize_artifact_renders_turkish_success_and_fallback(tmp_path: Path)
     assert "private quota detail" not in fallback
 
 
+def test_summarize_artifact_emits_only_a_safe_fallback_category(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    input_path = tmp_path / "input.json"
+    payload = build_summary_input(vulnerable_snapshot(), scan_snapshot(vulnerable_snapshot()))
+    input_path.write_text(json.dumps(payload), encoding="utf-8")
+    output = tmp_path / "summary.md"
+    canary = "provider-private-detail"
+
+    assert (
+        summarize_artifact(
+            input_path,
+            output,
+            model_client=FakeSummaryClient(ModelSummaryError(canary)),
+        )
+        == 0
+    )
+
+    stderr = capsys.readouterr().err
+    assert "WorkflowPromptGuard AI fallback: validation" in stderr
+    assert canary not in stderr
+
+
 def test_render_model_summary_neutralizes_mentions() -> None:
     rendered = render_model_summary(
         ModelSummary(

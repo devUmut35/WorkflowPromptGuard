@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 import tempfile
 from collections import Counter
 from collections.abc import Mapping
@@ -642,7 +643,14 @@ def summarize_artifact(
             if client is None:
                 client = CloudModelsClient(AnonymousLLM7Transport())
             summary_text = render_model_summary(client.summarize(value), language)
-    except (IssueBotError, ModelSummaryError, GitHubServiceError):
+    except (IssueBotError, ModelSummaryError, GitHubServiceError) as exc:
+        if isinstance(exc, ModelSummaryError):
+            category = exc.category
+        elif isinstance(exc, GitHubServiceError):
+            category = "transport"
+        else:
+            category = "artifact"
+        print(f"WorkflowPromptGuard AI fallback: {category}", file=sys.stderr)
         summary_text = render_model_fallback(language)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
