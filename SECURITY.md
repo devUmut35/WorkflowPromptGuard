@@ -32,13 +32,21 @@ repository's `.github/workflows` directory at a pinned commit. It does not clone
 follow symlinks, install target dependencies, or execute target code. Repository size, file count,
 individual file size, YAML structure, artifact size, and comment size are bounded.
 
-The external GitHub Models request contains only normalized rule identifiers, severities, counts,
-catalog-authored remediation text, and a validated `tr` or `en` language code. It never contains
-the issue body, workflow source, finding trace, repository identity, commit SHA, token, or write
-capability. AI text is explicitly labeled as advisory; model failure falls back to the complete
-deterministic report.
+The optional AI stage sends an anonymous request to the fixed
+`https://api.llm7.io/v1/chat/completions` endpoint with the `default` selector. Its payload contains
+only normalized `language`, `scanned_files`, `counts`, and catalog-backed `rules` aggregates. It
+never contains repository identity, commit SHA, issue body, workflow source, finding paths or
+traces, GitHub tokens, provider keys, or write capability. The GitHub token used by other jobs is
+not sent to LLM7.io.
+
+LLM7.io states that anonymous usage data may be processed for analysis and model improvement. The
+`default` route can choose a different underlying model between requests and has no availability,
+service-level, or reproducibility guarantee. Model text remains untrusted, is locally parsed and
+schema-checked, and is explicitly labeled as advisory. Any quota, provider, routing, or validation
+failure falls back to the complete deterministic report.
 
 Issue-triggered jobs execute the trusted source tree directly and install only the hash-pinned
 PyYAML runtime wheel. Public requests always receive deterministic analysis, but AI inference is
 limited to `OWNER`, `MEMBER`, or `COLLABORATOR` author associations on this WorkflowPromptGuard
-repository, or the maintainer-controlled `ai-approved` label, to protect the free model quota.
+repository, or the maintainer-controlled `ai-approved` label, to protect the anonymous provider
+quota.

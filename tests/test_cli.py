@@ -112,3 +112,26 @@ def test_issue_bot_requires_environment_token_and_dispatches(
         == 0
     )
     assert calls == [(event, output, "short-lived-token")]
+
+    summary_calls: list[tuple[Path, Path]] = []
+
+    def fake_summarize(input_path: Path, output_path: Path) -> int:
+        summary_calls.append((input_path, output_path))
+        return 0
+
+    monkeypatch.delenv("GITHUB_TOKEN")
+    monkeypatch.setattr(cli, "summarize_artifact", fake_summarize)
+    assert (
+        main(
+            [
+                "issue-bot",
+                "summarize",
+                "--input",
+                str(event),
+                "--output",
+                str(output),
+            ]
+        )
+        == 0
+    )
+    assert summary_calls == [(event, output)]

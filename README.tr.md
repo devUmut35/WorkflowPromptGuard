@@ -53,24 +53,32 @@ Yapay zekâ etkin olduğunda bot yorumu iki bölümü özellikle ayrı tutar:
 
 - **Deterministik bulgular**, WorkflowPromptGuard kurallarından gelir ve esas alınması gereken
   sonuçtur.
-- **Yapay zekâ tarafından oluşturulan açıklama**, GitHub Models'ın isteğe bağlı sade dil
-  özetidir.
+- **Yapay zekâ tarafından oluşturulan açıklama**, LLM7.io'nun anonim `default` rotasından gelen
+  isteğe bağlı sade dil özetidir.
 
-Ayrı bir API anahtarı saklanmaz. GitHub Actions kısa ömürlü bir `GITHUB_TOKEN` sağlar; GitHub
-Models ise ücretsiz ve hız sınırlı çıkarım sunar. Ücretsiz kota veya model hizmeti kullanılamazsa
-deterministik rapor yine yayımlanır.
+Model çağrısı ayrı bir API anahtarı olmadan `https://api.llm7.io/v1/chat/completions` adresine
+yapılır. GitHub Actions, GitHub API ve issue yorumu işlemleri için kısa ömürlü `GITHUB_TOKEN`
+kimlik bilgileri sağlar; ancak bu token hiçbir zaman LLM7.io'ya gönderilmez.
 
-Geçerli her form isteği otomatik deterministik tarama alır. Herkese açık issue spam'inin ücretsiz
-model kotasını tüketmesini önlemek için yapay zekâ açıklaması yalnızca isteği açan kullanıcının bu
-WorkflowPromptGuard deposundaki ilişkisi `OWNER`, `MEMBER` veya `COLLABORATOR` olduğunda otomatik
-çalışır. Bir depo yöneticisi diğer istekleri `ai-approved` etiketiyle onaylayabilir.
+LLM7.io şu anda anonim kullanım için saatte 60 istek ve kayan 24 saatlik dönemde toplam 500.000
+giriş-çıkış tokenı sınırı belgelemektedir. Anonim kullanım verileri analiz ve model iyileştirme
+amacıyla işlenebilir. `default` rotası farklı temel modeller seçebilir; kullanılabilirlik veya aynı
+sonucu yeniden üretme garantisi yoktur. Kota, sağlayıcı, yanıt doğrulama ya da yönlendirme hatasında
+eksiksiz deterministik rapor yine yayımlanır. Resmî [LLM7.io hizmet
+bilgilerini](https://llm7.io/), [anonim limitleri](https://docs.llm7.io/limits) ve [model seçici
+belgesini](https://docs.llm7.io/guides/models) inceleyebilirsiniz.
+
+Geçerli her form isteği otomatik deterministik tarama alır. Herkese açık issue spam'inin anonim
+sağlayıcı kotasını tüketmesini önlemek için yapay zekâ açıklaması yalnızca isteği açan kullanıcının
+bu WorkflowPromptGuard deposundaki ilişkisi `OWNER`, `MEMBER` veya `COLLABORATOR` olduğunda
+otomatik çalışır. Bir depo yöneticisi diğer istekleri `ai-approved` etiketiyle onaylayabilir.
 
 Bot yalnızca herkese açık GitHub depolarını destekler. Hedefin varsayılan dalının tam commit SHA
 değerini belirler ve okumaları bu değişmez sürüme sabitler. Yalnızca `.github/workflows` dizininin
-doğrudan altındaki dosyaları getirir; hedef kodu klonlamaz veya çalıştırmaz. Issue
-metni ve iş akışı kaynağı modele gönderilmez. GitHub Models'a yalnızca sınırlı kural kimlikleri,
-önem dereceleri, sayımlar, katalogda tanımlanmış çözüm metinleri ve doğrulanmış `tr` veya `en` dil
-kodu gönderilir.
+doğrudan altındaki dosyaları getirir; hedef kodu klonlamaz veya çalıştırmaz. Depo kimliği, commit
+SHA, issue metni, iş akışı kaynağı ve dosya yolları modele gönderilmez. Anonim LLM7.io isteği
+yalnızca normalize edilmiş `language`, `scanned_files`, `counts` ve katalog destekli `rules`
+agregalarını içerir.
 
 Sınırlar ve güvenlik modeli için
 [Türkçe issue botu belgesini](docs/issue-bot.tr.md) okuyun.

@@ -1,4 +1,4 @@
-"""Small, bounded HTTPS/JSON transport for GitHub-owned API hosts."""
+"""Small, bounded HTTPS/JSON transport for explicitly trusted API hosts."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from contextlib import suppress
 from typing import Any, Protocol
 from urllib.parse import urlsplit
 
-_ALLOWED_HOSTS = frozenset({"api.github.com", "models.github.ai"})
+_ALLOWED_HOSTS = frozenset({"api.github.com"})
 _ALLOWED_METHODS = frozenset({"GET", "POST"})
 _API_VERSION_RE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 _MAX_PATH_CHARACTERS = 8_192
@@ -21,7 +21,7 @@ _USER_AGENT = "WorkflowPromptGuard/0.2"
 
 
 class GitHubServiceError(RuntimeError):
-    """A bounded GitHub service request failed or returned invalid data."""
+    """A bounded HTTPS service request failed or returned invalid data."""
 
     def __init__(self, message: str, *, status: int | None = None) -> None:
         super().__init__(message)
@@ -29,7 +29,7 @@ class GitHubServiceError(RuntimeError):
 
 
 class JsonTransport(Protocol):
-    """Protocol shared by the GitHub repository and Models API clients."""
+    """Protocol shared by fixed-host JSON API clients."""
 
     def request_json(
         self,
@@ -44,7 +44,7 @@ class JsonTransport(Protocol):
 
 
 class HTTPSJsonTransport:
-    """Perform capped JSON requests to an explicit GitHub host allowlist."""
+    """Perform capped JSON requests to an explicit host allowlist."""
 
     def __init__(self, token: str | None = None) -> None:
         if token is not None and (
@@ -97,8 +97,8 @@ class HTTPSJsonTransport:
         headers = {
             "Accept": "application/vnd.github+json",
             "User-Agent": _USER_AGENT,
+            "X-GitHub-Api-Version": api_version,
         }
-        headers["X-GitHub-Api-Version"] = api_version
         if self._token is not None:
             headers["Authorization"] = f"Bearer {self._token}"
         if has_body:
@@ -144,8 +144,8 @@ class HTTPSJsonTransport:
     def _decode_response(raw_response: bytes) -> Any:
         try:
             decoded: Any = json.loads(raw_response.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            raise GitHubServiceError("GitHub service returned invalid JSON") from None
+        except (UnicodeDecodeError, json.JSONDecodeError, RecursionError):
+            raise GitHubServiceError("HTTPS service returned invalid JSON") from None
         return decoded
 
     @staticmethod
@@ -157,19 +157,31 @@ class HTTPSJsonTransport:
             )
         if status < 200 or status >= 300:
             raise GitHubServiceError(
-                f"GitHub service request to {host} failed with HTTP {status}",
+                f"HTTPS service request to {host} failed with HTTP {status}",
                 status=status,
             )
 
     @staticmethod
     def _read_response(response: http.client.HTTPResponse) -> bytes:
+        HTTPSJsonTransport._validate_content_type(response)
         content_length = HTTPSJsonTransport._content_length(response)
         if content_length is not None and content_length > _MAX_RESPONSE_BYTES:
-            raise GitHubServiceError("GitHub service response exceeds the size limit")
+            raise GitHubServiceError("HTTPS service response exceeds the size limit")
         raw_response = response.read(_MAX_RESPONSE_BYTES + 1)
         if len(raw_response) > _MAX_RESPONSE_BYTES:
-            raise GitHubServiceError("GitHub service response exceeds the size limit")
+            raise GitHubServiceError("HTTPS service response exceeds the size limit")
         return raw_response
+
+    @staticmethod
+    def _validate_content_type(response: http.client.HTTPResponse) -> None:
+        value = response.getheader("Content-Type")
+        if not isinstance(value, str):
+            raise GitHubServiceError("HTTPS service response had an invalid Content-Type")
+        media_type = value.partition(";")[0].strip().lower()
+        if media_type != "application/json" and not (
+            media_type.startswith("application/") and media_type.endswith("+json")
+        ):
+            raise GitHubServiceError("HTTPS service response had an invalid Content-Type")
 
     @staticmethod
     def _validate_destination(
@@ -224,7 +236,45 @@ class HTTPSJsonTransport:
         try:
             length = int(value, 10)
         except ValueError:
-            raise GitHubServiceError("GitHub service returned an invalid Content-Length") from None
+            raise GitHubServiceError("HTTPS service returned an invalid Content-Length") from None
         if length < 0:
-            raise GitHubServiceError("GitHub service returned an invalid Content-Length")
+            raise GitHubServiceError("HTTPS service returned an invalid Content-Length")
         return length
+
+
+class AnonymousLLM7Transport:
+    """Call exactly one anonymous LLM7.io endpoint without accepting credentials."""
+
+    def request_json(
+        self,
+        *,
+        host: str,
+        path: str,
+        method: str = "GET",
+        payload: object | None = None,
+        api_version: str = "2022-11-28",
+    ) -> Any:
+        """POST one capped JSON document to the fixed anonymous inference endpoint."""
+
+        if (
+            host != "api.llm7.io"
+            or path != "/v1/chat/completions"
+            or method != "POST"
+            or api_version != "2022-11-28"
+        ):
+            raise GitHubServiceError("anonymous AI destination is not permitted")
+        body = HTTPSJsonTransport._encode_payload(payload)
+        if body is None:
+            raise GitHubServiceError("anonymous AI request requires a JSON payload")
+        raw_response = HTTPSJsonTransport._perform_request(
+            host=host,
+            path=path,
+            method="POST",
+            body=body,
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "User-Agent": _USER_AGENT,
+            },
+        )
+        return HTTPSJsonTransport._decode_response(raw_response)

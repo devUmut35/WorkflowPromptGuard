@@ -83,7 +83,7 @@ def _parser() -> argparse.ArgumentParser:
     prepare_parser.add_argument("--output-dir", type=Path, required=True)
     summarize_parser = bot_subparsers.add_parser(
         "summarize",
-        help="create an optional GitHub Models explanation from a sanitized artifact",
+        help="create an optional LLM7.io explanation from a sanitized artifact",
     )
     summarize_parser.add_argument("--input", type=Path, required=True)
     summarize_parser.add_argument("--output", type=Path, required=True)
@@ -172,14 +172,14 @@ def _explain_command(rule_id: str) -> int:
 
 
 def _issue_bot_command(arguments: argparse.Namespace) -> int:
-    token = os.environ.get("GITHUB_TOKEN")
-    if not token:
-        print("GITHUB_TOKEN is required for the hosted issue bot", file=sys.stderr)
-        return 2
     if arguments.bot_command == "prepare":
+        token = os.environ.get("GITHUB_TOKEN")
+        if not token:
+            print("GITHUB_TOKEN is required for the hosted issue bot", file=sys.stderr)
+            return 2
         return prepare_issue_scan(arguments.event, arguments.output_dir, token=token)
     if arguments.bot_command == "summarize":
-        return summarize_artifact(arguments.input, arguments.output, token=token)
+        return summarize_artifact(arguments.input, arguments.output)
     return 2
 
 

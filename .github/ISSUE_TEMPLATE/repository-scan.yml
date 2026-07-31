@@ -10,8 +10,22 @@ body:
         Bot, hedef deponun varsayılan dalı için belirlenen sabit commit'te, `.github/workflows`
         dizininin doğrudan altındaki desteklenen dosyaları okur; hedef kodu hiçbir zaman çalıştırmaz.
 
+        Yapay zekâ açıklaması etkinleştirilirse yalnızca normalize edilmiş `language`,
+        `scanned_files`, `counts` ve `rules` agregaları LLM7.io'nun anonim `default` rotasına,
+        `https://api.llm7.io/v1/chat/completions` adresine gönderilir. Depo kimliği, commit SHA,
+        issue metni, iş akışı kaynağı, dosya yolu, GitHub tokenı veya ayrı bir API anahtarı
+        gönderilmez. LLM7.io anonim kullanım verilerini analiz ve model iyileştirme için işleyebilir;
+        rota değişkendir ve hizmet garantisi yoktur. Bir hata oluşursa deterministik rapor korunur.
+
         The bot reads only supported files directly under `.github/workflows` at the target
         repository's pinned default-branch commit. It never executes target code.
+
+        If the AI explanation is enabled, only normalized `language`, `scanned_files`, `counts`,
+        and `rules` aggregates are sent to LLM7.io's anonymous `default` route at
+        `https://api.llm7.io/v1/chat/completions`. Repository identity, commit SHA, issue text,
+        workflow source, file paths, the GitHub token, and any separate API key are not sent.
+        LLM7.io may process anonymous usage data for analysis and model improvement; routing is
+        variable and has no service guarantee. The deterministic report is preserved on failure.
 
   - type: dropdown
     id: language
@@ -40,4 +54,13 @@ body:
       label: Herkese açık rapor / Public report
       options:
         - label: Tarama sonucunun bu issue'da herkese açık yayımlanacağını anlıyorum. / I understand that the scan result will be posted publicly on this issue.
+          required: true
+
+  - type: checkboxes
+    id: llm7_disclosure
+    attributes:
+      label: Harici yapay zekâ / External AI
+      description: Yukarıdaki LLM7.io veri açıklamasını onaylayın. / Acknowledge the LLM7.io data disclosure above.
+      options:
+        - label: AI etkinse LLM7.io'nun normalize özeti işleyebileceğini anlıyorum. / I understand LLM7.io may process the normalized summary when AI is enabled.
           required: true

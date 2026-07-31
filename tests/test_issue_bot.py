@@ -183,6 +183,9 @@ def test_issue_form_and_parser_share_the_same_closed_language_contract() -> None
     assert language_field["attributes"]["options"] == list(FORM_LANGUAGE_OPTIONS)
     assert language_field["attributes"]["default"] == 0
     assert language_field["validations"]["required"] is True
+    disclosure_field = next(item for item in form["body"] if item.get("id") == "llm7_disclosure")
+    assert disclosure_field["type"] == "checkboxes"
+    assert disclosure_field["attributes"]["options"][0]["required"] is True
 
 
 def test_comment_workflow_uses_literal_safe_single_placeholder_replacement() -> None:
@@ -193,6 +196,14 @@ def test_comment_workflow_uses_literal_safe_single_placeholder_replacement() -> 
     assert "placeholderCount !== 1" in workflow
     assert "report.replace(placeholder, () => ai)" in workflow
     assert "body.includes(placeholder)" in workflow
+    explain_job = workflow.split("\n  explain:\n", maxsplit=1)[1].split(
+        "\n  comment:\n", maxsplit=1
+    )[0]
+    assert "actions: read" in explain_job
+    assert "contents: read" in explain_job
+    assert "models: read" not in explain_job
+    assert "GITHUB_TOKEN" not in explain_job
+    assert "persist-credentials: false" in explain_job
 
 
 def test_prepare_scans_snapshot_and_writes_prompt_safe_artifacts(tmp_path: Path) -> None:
@@ -339,24 +350,25 @@ def test_summarize_artifact_success_disabled_and_fallback(tmp_path: Path) -> Non
         ModelSummary(
             overview="One guardrail is disabled.",
             recommendations=("Enable strict mode.",),
-            model="openai/gpt-4.1-mini",
+            model="qwen3-235b",
         )
     )
 
-    assert summarize_artifact(input_path, output, token="token", model_client=client) == 0
+    assert summarize_artifact(input_path, output, model_client=client) == 0
     assert "AI-generated explanation" in output.read_text(encoding="utf-8")
     assert "advisory only" in output.read_text(encoding="utf-8")
+    assert "LLM7.io (`qwen3-235b`)" in output.read_text(encoding="utf-8")
 
     input_path.write_text(
         '{"schema_version": 2, "enabled": false, "language": "en"}',
         encoding="utf-8",
     )
-    summarize_artifact(input_path, output, token="token", model_client=client)
+    summarize_artifact(input_path, output, model_client=client)
     assert output.read_text(encoding="utf-8") == ""
 
     input_path.write_text(json.dumps(client.inputs[0]), encoding="utf-8")
     failing = FakeSummaryClient(ModelSummaryError("quota details"))
-    summarize_artifact(input_path, output, token="token", model_client=failing)
+    summarize_artifact(input_path, output, model_client=failing)
     fallback = output.read_text(encoding="utf-8")
     assert "rate-limited" in fallback
     assert "quota details" not in fallback
@@ -375,21 +387,21 @@ def test_summarize_artifact_renders_turkish_success_and_fallback(tmp_path: Path)
         ModelSummary(
             overview="Bir kritik güven sınırı riski bulundu.",
             recommendations=("Ajanı salt okunur yapın.",),
-            model="openai/gpt-4.1-mini",
+            model="qwen3-235b",
         )
     )
 
-    summarize_artifact(input_path, output, token="token", model_client=client)
+    summarize_artifact(input_path, output, model_client=client)
 
     success = output.read_text(encoding="utf-8")
     assert "Yapay zekâ tarafından oluşturulan açıklama" in success
     assert "Önerilen öncelikler" in success
     assert "bilgilendirme amaçlıdır" in success
+    assert "LLM7.io (`qwen3-235b`)" in success
 
     summarize_artifact(
         input_path,
         output,
-        token="token",
         model_client=FakeSummaryClient(ModelSummaryError("private quota detail")),
     )
     fallback = output.read_text(encoding="utf-8")
@@ -402,7 +414,7 @@ def test_render_model_summary_neutralizes_mentions() -> None:
         ModelSummary(
             overview="@octocat <script>",
             recommendations=("Do `this`.",),
-            model="openai/gpt-4.1-mini",
+            model="qwen3-235b",
         )
     )
 

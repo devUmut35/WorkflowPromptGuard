@@ -70,30 +70,39 @@ Its data flow is intentionally split across three jobs:
 1. A read-only scan job validates one canonical public GitHub URL, resolves the default branch to
    a full commit SHA, retrieves only bounded workflow blobs through the fixed GitHub API host, and
    emits a deterministic report plus catalog-backed aggregates.
-2. A model job has `models: read` but no issue-write permission. It validates a bounded artifact,
-   then sends only catalog-backed aggregates and the validated `tr` or `en` language code to
-   GitHub Models. Repository identity, commit SHA, raw issue text, and workflow content never enter
-   the prompt. The model uses no tools and emits bounded structured text.
+2. A model job has no issue-write permission. It validates a bounded artifact, then sends an
+   anonymous request to the fixed `https://api.llm7.io/v1/chat/completions` endpoint with the
+   `default` selector. The request contains only normalized `language`, `scanned_files`, `counts`,
+   and catalog-backed `rules` aggregates. Repository identity, commit SHA, raw issue text,
+   workflow content, paths, GitHub tokens, and provider keys never enter the prompt. The model uses
+   no tools; its text is parsed and schema-checked locally before publication.
 3. A comment job has `issues: write` but no model or repository-content permission. It validates
    fixed artifact markers and creates or updates only the current issue's bot report.
 
 The target repository is never cloned or executed. User-supplied hosts, branches, refs,
 subdirectories, redirects, symlinks, submodules, oversized files, recursive YAML structures, and
-unknown artifact schemas fail closed. GitHub Models is rate-limited and advisory; quota failure
-does not affect the deterministic scan. Public requests receive the deterministic scan
-automatically, while model inference requires an `OWNER`, `MEMBER`, or `COLLABORATOR` author
-association on this WorkflowPromptGuard repository, or the maintainer-controlled `ai-approved`
-label. A global concurrency group bounds simultaneous bot runs, but it does not provide per-actor
-rate limiting: sustained issue spam can replace the single pending run GitHub retains for the
-group and delay legitimate scans. Deployments that require availability guarantees need an
-external queue and per-actor limiter.
+unknown artifact schemas fail closed. LLM7.io currently documents anonymous limits of 60 requests
+per hour and 500,000 input-plus-output tokens per rolling 24 hours. It may process anonymous usage
+data for analysis and model improvement. Its `default` route can vary the underlying model and
+provides no availability, service-level, or reproducibility guarantee. Quota, provider, routing,
+malformed-output, and local-validation failures do not affect the deterministic scan.
+
+Public requests receive the deterministic scan automatically, while model inference requires an
+`OWNER`, `MEMBER`, or `COLLABORATOR` author association on this WorkflowPromptGuard repository, or
+the maintainer-controlled `ai-approved` label. A global concurrency group bounds simultaneous bot
+runs, but it does not provide per-actor rate limiting: sustained issue spam can replace the single
+pending run GitHub retains for the group and delay legitimate scans. Deployments that require
+availability guarantees need an external queue and per-actor limiter.
 
 ## References
 
 - [GitHub Actions secure use reference](https://docs.github.com/en/actions/reference/security/secure-use)
 - [GitHub Actions script injections](https://docs.github.com/en/actions/concepts/security/script-injections)
-- [GitHub Models quickstart](https://docs.github.com/en/github-models/quickstart)
-- [GitHub Models billing and free usage](https://docs.github.com/en/billing/concepts/product-billing/github-models)
+- [LLM7.io service information and anonymous-use notice](https://llm7.io/)
+- [LLM7.io quickstart](https://docs.llm7.io/quickstart)
+- [LLM7.io model selectors](https://docs.llm7.io/guides/models)
+- [LLM7.io limits](https://docs.llm7.io/limits)
+- [LLM7.io service status](https://status.llm7.io/)
 - [GitHub Agentic Workflows overview](https://docs.github.com/en/copilot/concepts/agents/about-github-agentic-workflows)
 - [GitHub Agentic Workflows security architecture](https://github.blog/ai-and-ml/generative-ai/under-the-hood-security-architecture-of-github-agentic-workflows/)
 - [GitHub Agentic Workflows safe outputs](https://github.github.com/gh-aw/reference/safe-outputs/)

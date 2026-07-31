@@ -7,7 +7,11 @@ from typing import Any, ClassVar
 
 import pytest
 
-from workflow_prompt_guard.github_api import GitHubServiceError, HTTPSJsonTransport
+from workflow_prompt_guard.github_api import (
+    AnonymousLLM7Transport,
+    GitHubServiceError,
+    HTTPSJsonTransport,
+)
 
 
 class FakeResponse:
@@ -19,15 +23,19 @@ class FakeResponse:
         *,
         status: int = 200,
         content_length: str | None = None,
+        content_type: str | None = "application/json",
     ) -> None:
         self.body = body
         self.status = status
         self.content_length = content_length
+        self.content_type = content_type
         self.closed = False
 
     def getheader(self, name: str) -> str | None:
         if name == "Content-Length":
             return self.content_length
+        if name == "Content-Type":
+            return self.content_type
         return None
 
     def read(self, amount: int | None = None) -> bytes:
@@ -84,30 +92,93 @@ def fake_https_connection(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
-def test_models_post_is_json_encoded_and_authenticated() -> None:
-    transport = HTTPSJsonTransport("github-token")
+def test_anonymous_llm7_post_uses_exact_endpoint_without_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    canary = "github-token-that-must-never-leave-github"
+    monkeypatch.setenv("GITHUB_TOKEN", canary)
+    transport = AnonymousLLM7Transport()
 
     result = transport.request_json(
-        host="models.github.ai",
-        path="/inference/chat/completions",
+        host="api.llm7.io",
+        path="/v1/chat/completions",
         method="POST",
-        payload={"model": "openai/gpt-4.1-mini", "stream": False},
+        payload={"model": "default", "stream": False},
     )
 
     connection = FakeConnection.instances[0]
     method, path, body, headers = connection.requests[0]
     assert result == {"ok": True}
-    assert connection.host == "models.github.ai"
+    assert connection.host == "api.llm7.io"
     assert connection.timeout == 15.0
     assert method == "POST"
-    assert path == "/inference/chat/completions"
+    assert path == "/v1/chat/completions"
     assert json.loads(body or b"")["stream"] is False
-    assert headers["Authorization"] == "Bearer github-token"
-    assert headers["Content-Type"] == "application/json"
-    assert headers["X-GitHub-Api-Version"] == "2022-11-28"
-    assert headers["User-Agent"] == "WorkflowPromptGuard/0.2"
+    assert headers == {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "User-Agent": "WorkflowPromptGuard/0.2",
+    }
+    serialized_request = (body or b"").decode("utf-8") + json.dumps(headers)
+    assert canary not in serialized_request
+    assert "Authorization" not in headers
+    assert "Cookie" not in headers
+    assert "X-GitHub-Api-Version" not in headers
     assert connection.closed
     assert FakeConnection.response.closed
+
+
+def test_tokened_github_transport_rejects_llm7_before_connecting() -> None:
+    with pytest.raises(GitHubServiceError, match="host"):
+        HTTPSJsonTransport("github-token").request_json(
+            host="api.llm7.io",
+            path="/v1/chat/completions",
+            method="POST",
+            payload={"model": "default"},
+        )
+
+    assert not FakeConnection.instances
+
+
+@pytest.mark.parametrize(
+    ("host", "path", "method"),
+    [
+        ("api.llm7.io", "/v1/chat/completions/", "POST"),
+        ("api.llm7.io", "/v1/chat/completions?debug=true", "POST"),
+        ("api.llm7.io", "/v1/models", "POST"),
+        ("api.llm7.io", "/v1/chat/completions", "GET"),
+        ("api.llm7.io", "/v1/chat/completions", "post"),
+        ("models.github.ai", "/inference/chat/completions", "POST"),
+        ("evil.example", "/v1/chat/completions", "POST"),
+    ],
+)
+def test_anonymous_llm7_transport_rejects_every_other_destination_before_connecting(
+    host: str,
+    path: str,
+    method: str,
+) -> None:
+    with pytest.raises(GitHubServiceError, match="destination"):
+        AnonymousLLM7Transport().request_json(
+            host=host,
+            path=path,
+            method=method,
+            payload={"model": "default"},
+        )
+
+    assert not FakeConnection.instances
+
+
+def test_anonymous_llm7_transport_rejects_wrong_api_version_before_connecting() -> None:
+    with pytest.raises(GitHubServiceError, match="destination"):
+        AnonymousLLM7Transport().request_json(
+            host="api.llm7.io",
+            path="/v1/chat/completions",
+            method="POST",
+            payload={"model": "default"},
+            api_version="2023-01-01",
+        )
+
+    assert not FakeConnection.instances
 
 
 def test_github_api_request_sets_version_without_token() -> None:
@@ -183,7 +254,7 @@ def test_response_size_is_bounded(response: FakeResponse) -> None:
         HTTPSJsonTransport().request_json(host="api.github.com", path="/large")
 
 
-def test_invalid_json_and_content_length_are_rejected() -> None:
+def test_invalid_json_and_content_length_are_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     FakeConnection.response = FakeResponse(b"not-json")
     with pytest.raises(GitHubServiceError, match="invalid JSON"):
         HTTPSJsonTransport().request_json(host="api.github.com", path="/invalid")
@@ -191,6 +262,44 @@ def test_invalid_json_and_content_length_are_rejected() -> None:
     FakeConnection.response = FakeResponse(content_length="unknown")
     with pytest.raises(GitHubServiceError, match="Content-Length"):
         HTTPSJsonTransport().request_json(host="api.github.com", path="/invalid")
+
+    def recursive_parse(_: str) -> Any:
+        raise RecursionError
+
+    monkeypatch.setattr("workflow_prompt_guard.github_api.json.loads", recursive_parse)
+    FakeConnection.response = FakeResponse()
+    with pytest.raises(GitHubServiceError, match="invalid JSON"):
+        HTTPSJsonTransport().request_json(host="api.github.com", path="/invalid")
+
+
+@pytest.mark.parametrize("content_type", [None, "text/html", "text/plain; charset=utf-8"])
+def test_success_response_requires_a_json_content_type(content_type: str | None) -> None:
+    FakeConnection.response = FakeResponse(content_type=content_type)
+
+    with pytest.raises(GitHubServiceError, match="Content-Type"):
+        AnonymousLLM7Transport().request_json(
+            host="api.llm7.io",
+            path="/v1/chat/completions",
+            method="POST",
+            payload={"model": "default"},
+        )
+
+
+@pytest.mark.parametrize(
+    "content_type",
+    [
+        "application/json",
+        "application/json; charset=utf-8",
+        "application/vnd.github+json",
+        "application/problem+json; charset=utf-8",
+    ],
+)
+def test_json_and_structured_json_content_types_are_accepted(content_type: str) -> None:
+    FakeConnection.response = FakeResponse(content_type=content_type)
+
+    assert HTTPSJsonTransport().request_json(host="api.github.com", path="/repos/a/b") == {
+        "ok": True
+    }
 
 
 def test_transport_errors_do_not_expose_token() -> None:
@@ -204,21 +313,22 @@ def test_transport_errors_do_not_expose_token() -> None:
 
 
 def test_payload_rules_are_bounded_and_strict() -> None:
-    transport = HTTPSJsonTransport()
+    github_transport = HTTPSJsonTransport()
+    llm7_transport = AnonymousLLM7Transport()
 
     with pytest.raises(GitHubServiceError, match="GET"):
-        transport.request_json(host="api.github.com", path="/safe", payload={})
+        github_transport.request_json(host="api.github.com", path="/safe", payload={})
     with pytest.raises(GitHubServiceError, match="valid JSON"):
-        transport.request_json(
-            host="models.github.ai",
-            path="/safe",
+        llm7_transport.request_json(
+            host="api.llm7.io",
+            path="/v1/chat/completions",
             method="POST",
             payload={"not_finite": float("nan")},
         )
     with pytest.raises(GitHubServiceError, match="size limit"):
-        transport.request_json(
-            host="models.github.ai",
-            path="/safe",
+        llm7_transport.request_json(
+            host="api.llm7.io",
+            path="/v1/chat/completions",
             method="POST",
             payload={"large": "x" * (512 * 1024)},
         )

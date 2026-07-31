@@ -13,6 +13,14 @@ The project follows [Semantic Versioning](https://semver.org/).
 - Localized deterministic reports, safe error messages, model instructions, AI provenance, and
   quota fallback while preserving stable rule IDs and machine-facing output.
 
+### Changed
+
+- Replaced [GitHub Models](https://docs.github.com/en/github-models), retired on 2026-07-30, with
+  the anonymous LLM7.io `default` route at
+  `https://api.llm7.io/v1/chat/completions`. The hosted bot sends no API key or GitHub token to the
+  provider, discloses possible anonymous usage-data processing and variable routing, and preserves
+  the complete deterministic report when quota, provider, routing, or validation fails.
+
 ## [0.2.0] - 2026-07-29
 
 ### Added

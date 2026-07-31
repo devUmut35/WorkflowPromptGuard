@@ -1,4 +1,4 @@
-"""Tests for bounded, catalog-backed GitHub Models summaries."""
+"""Tests for bounded, catalog-backed anonymous cloud-model summaries."""
 
 from __future__ import annotations
 
@@ -7,8 +7,9 @@ from typing import Any
 
 import pytest
 
+from workflow_prompt_guard.github_api import GitHubServiceError
 from workflow_prompt_guard.github_models import (
-    GitHubModelsClient,
+    CloudModelsClient,
     ModelSummaryError,
     normalize_summary_input,
 )
@@ -65,6 +66,34 @@ def summary_input() -> dict[str, Any]:
     }
 
 
+def model_response(
+    content: str | None = None,
+    *,
+    model: str = "qwen3-235b",
+    finish_reason: str = "stop",
+) -> dict[str, Any]:
+    return {
+        "model": model,
+        "choices": [
+            {
+                "finish_reason": finish_reason,
+                "message": {
+                    "content": content
+                    or json.dumps(
+                        {
+                            "overview": "Two trust-boundary risks were detected.",
+                            "recommendations": [
+                                "Make the agent read-only.",
+                                "Keep threat detection enabled.",
+                            ],
+                        }
+                    )
+                },
+            }
+        ],
+    }
+
+
 def test_normalize_rebuilds_descriptions_from_catalog() -> None:
     value = summary_input()
 
@@ -111,40 +140,30 @@ def test_normalize_rejects_invalid_artifacts(field: str, value: Any) -> None:
 
 
 def test_client_sends_only_normalized_aggregates_and_validates_response() -> None:
-    response = {
-        "choices": [
-            {
-                "message": {
-                    "content": json.dumps(
-                        {
-                            "overview": "Two important trust-boundary risks were detected.",
-                            "recommendations": [
-                                "Make the agent read-only.",
-                                "Keep threat detection enabled.",
-                            ],
-                        }
-                    )
-                }
-            }
-        ]
-    }
-    transport = FakeTransport([response])
-    client = GitHubModelsClient(transport)
+    transport = FakeTransport([model_response()])
 
-    summary = client.summarize(summary_input())
+    summary = CloudModelsClient(transport).summarize(summary_input())
 
-    assert summary.model == "openai/gpt-4.1-mini"
+    assert summary.model == "qwen3-235b"
     assert len(summary.recommendations) == 2
+    assert len(transport.requests) == 1
     request = transport.requests[0]
-    assert request["host"] == "models.github.ai"
-    assert request["path"] == "/inference/chat/completions"
-    assert request["api_version"] == "2026-03-10"
+    assert request["host"] == "api.llm7.io"
+    assert request["path"] == "/v1/chat/completions"
+    assert request["method"] == "POST"
+    assert request["api_version"] == "2022-11-28"
     body = request["payload"]
     assert isinstance(body, dict)
-    assert "tools" not in body
-    assert "tool_choice" not in body
+    assert set(body) == {"model", "messages", "temperature", "max_tokens", "stream"}
+    assert body["model"] == "default"
+    assert body["temperature"] == 0
+    assert body["max_tokens"] == 500
+    assert body["stream"] is False
+    assert "Return only one JSON object" in body["messages"][0]["content"]
     assert "only in natural English" in body["messages"][0]["content"]
+    assert [message["role"] for message in body["messages"]] == ["system", "user"]
     prompt = body["messages"][1]["content"]
+    assert set(json.loads(prompt)) == {"language", "scanned_files", "counts", "rules"}
     assert "octo-org/example" not in prompt
     assert "a" * 40 not in prompt
     assert "github.event.issue.body" not in prompt
@@ -152,25 +171,19 @@ def test_client_sends_only_normalized_aggregates_and_validates_response() -> Non
 
 
 def test_client_uses_only_the_validated_turkish_language_code() -> None:
-    response = {
-        "choices": [
+    response = model_response(
+        json.dumps(
             {
-                "message": {
-                    "content": json.dumps(
-                        {
-                            "overview": "İki güven sınırı riski bulundu.",
-                            "recommendations": ["Ajanı salt okunur yapın."],
-                        }
-                    )
-                }
+                "overview": "İki güven sınırı riski bulundu.",
+                "recommendations": ["Ajanı salt okunur yapın."],
             }
-        ]
-    }
+        )
+    )
     transport = FakeTransport([response])
     payload = summary_input()
     payload["language"] = "tr"
 
-    summary = GitHubModelsClient(transport).summarize(payload)
+    summary = CloudModelsClient(transport).summarize(payload)
 
     assert summary.overview == "İki güven sınırı riski bulundu."
     request = transport.requests[0]["payload"]
@@ -179,47 +192,78 @@ def test_client_uses_only_the_validated_turkish_language_code() -> None:
     assert '"language":"tr"' in request["messages"][1]["content"]
 
 
-def test_client_falls_back_to_second_model_after_invalid_response() -> None:
-    valid = {
-        "choices": [
-            {
-                "message": {
-                    "content": json.dumps(
-                        {
-                            "overview": "No findings were detected.",
-                            "recommendations": [],
-                        }
-                    )
+def test_client_allows_only_one_selector_and_one_request() -> None:
+    with pytest.raises(ValueError, match="exactly one"):
+        CloudModelsClient(FakeTransport([]), models=("default", "fast"))
+
+    transport = FakeTransport([GitHubServiceError("provider-canary")])
+    with pytest.raises(ModelSummaryError, match="unavailable") as caught:
+        CloudModelsClient(transport).summarize(summary_input())
+
+    assert len(transport.requests) == 1
+    assert "provider-canary" not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        '```json\n{"overview":"Clean.","recommendations":[]}\n```',
+        '```\n{"overview":"Clean.","recommendations":[]}\n```',
+    ],
+)
+def test_client_accepts_one_whole_json_fence_without_prose(content: str) -> None:
+    summary = CloudModelsClient(FakeTransport([model_response(content)])).summarize(summary_input())
+
+    assert summary.overview == "Clean."
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        'Here is the result: {"overview":"Clean.","recommendations":[]}',
+        'Here is the result:\n```json\n{"overview":"Clean.","recommendations":[]}\n```',
+        '{"overview":"first","overview":"second","recommendations":[]}',
+        '{"overview":"Clean."}',
+        '{"overview":"Clean.","recommendations":[],"extra":true}',
+        '{"overview":"@octocat","recommendations":[]}',
+        '{"overview":"See https://example.test","recommendations":[]}',
+        '{"overview":"bad\\u202etext","recommendations":[]}',
+        '{"overview":"bad\\ud800text","recommendations":[]}',
+        '{"overview":"Clean.","recommendations":["a","b","c","d"]}',
+    ],
+)
+def test_client_rejects_noncanonical_or_unsafe_model_content(content: str) -> None:
+    with pytest.raises(ModelSummaryError, match="unavailable"):
+        CloudModelsClient(FakeTransport([model_response(content)])).summarize(summary_input())
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        {"choices": []},
+        model_response(model="bad model\nname"),
+        model_response(finish_reason="length"),
+        {
+            "model": "qwen3-235b",
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "message": {
+                        "content": '{"overview":"Clean.","recommendations":[]}',
+                        "tool_calls": [{"id": "call"}],
+                    },
                 }
-            }
-        ]
-    }
-    transport = FakeTransport([{"choices": []}, valid])
-
-    summary = GitHubModelsClient(transport).summarize(summary_input())
-
-    assert summary.model == "openai/gpt-4o-mini"
-    assert len(transport.requests) == 2
-
-
-def test_client_neutralizes_mentions_and_html() -> None:
-    response = {
-        "choices": [
-            {
-                "message": {
-                    "content": json.dumps(
-                        {
-                            "overview": "<b>@octocat</b>",
-                            "recommendations": ["Run `danger`"],
-                        }
-                    )
-                }
-            }
-        ]
-    }
-
-    summary = GitHubModelsClient(FakeTransport([response])).summarize(summary_input())
-
-    assert "<" not in summary.overview
-    assert "@octocat" not in summary.overview
-    assert "`" not in summary.recommendations[0]
+            ],
+        },
+        {
+            "model": "qwen3-235b",
+            "choices": [
+                model_response()["choices"][0],
+                model_response()["choices"][0],
+            ],
+        },
+    ],
+)
+def test_client_rejects_invalid_response_envelopes(response: dict[str, Any]) -> None:
+    with pytest.raises(ModelSummaryError, match="unavailable"):
+        CloudModelsClient(FakeTransport([response])).summarize(summary_input())

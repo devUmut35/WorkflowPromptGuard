@@ -53,22 +53,30 @@ When AI is enabled, the comment keeps two deliberately separate sections:
 - **Deterministic findings / Deterministik bulgular** come from WorkflowPromptGuard's rules and
   remain the source of truth.
 - **AI-generated explanation / Yapay zekâ tarafından oluşturulan açıklama** is an optional
-  plain-language summary from GitHub Models.
+  plain-language summary from LLM7.io's anonymous `default` route.
 
-No separate API key is stored. GitHub Actions supplies a short-lived `GITHUB_TOKEN`, and GitHub
-Models provides free, rate-limited inference. If the free quota or model service is unavailable,
-the deterministic report is still posted.
+The model call uses `https://api.llm7.io/v1/chat/completions` without a separate API key. GitHub
+Actions still supplies short-lived `GITHUB_TOKEN` credentials for GitHub API and issue-comment
+operations, but that token is never sent to LLM7.io.
+
+LLM7.io currently documents anonymous limits of 60 requests per hour and 500,000 input-plus-output
+tokens per rolling 24 hours. Anonymous usage data may be processed for analysis and model
+improvement. The `default` route can select different underlying models and has no availability or
+reproducibility guarantee. If a quota, provider, response-validation, or routing failure occurs,
+the complete deterministic report is still posted. See the official [LLM7.io service
+information](https://llm7.io/), [anonymous limits](https://docs.llm7.io/limits), and [model
+selector documentation](https://docs.llm7.io/guides/models).
 
 Every valid form submission receives an automatic deterministic scan. To prevent public issue
-spam from exhausting the free model quota, AI explanations run automatically only when the
+spam from exhausting the anonymous provider quota, AI explanations run automatically only when the
 requester's association with this WorkflowPromptGuard repository is `OWNER`, `MEMBER`, or
 `COLLABORATOR`; a maintainer can approve another request with the `ai-approved` label.
 
 The hosted bot only supports public GitHub repositories. It fetches files directly under
 `.github/workflows` at an immutable commit SHA, never clones or executes target code, and never
-sends issue text or workflow source to the model. Only bounded rule IDs, severities, counts,
-catalog-authored remediation text, and the validated `tr` or `en` language code are sent to
-GitHub Models.
+sends repository identity, commit SHA, issue text, workflow source, or paths to the model. The
+anonymous LLM7.io request contains only the normalized `language`, `scanned_files`, `counts`, and
+catalog-backed `rules` aggregates.
 
 See the hosted issue bot documentation in [English](docs/issue-bot.md) or
 [Türkçe](docs/issue-bot.tr.md) for its limits and security boundary.
