@@ -76,7 +76,7 @@ jobs:
           --require-hashes
           --requirement .github/issue-bot-requirements.txt
       - name: Receive the sanitized scan artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: wpg-scan-${{ github.event.issue.number }}
           path: ${{ runner.temp }}/wpg-scan
@@ -104,12 +104,12 @@ jobs:
       issues: write
     steps:
       - name: Receive the deterministic report
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: wpg-scan-${{ github.event.issue.number }}
           path: ${{ runner.temp }}/wpg-scan
       - name: Receive the optional explanation
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: wpg-ai-${{ github.event.issue.number }}
           path: ${{ runner.temp }}/wpg-ai
