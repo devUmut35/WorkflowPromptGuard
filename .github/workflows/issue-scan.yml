@@ -44,7 +44,7 @@ jobs:
           --event "$GITHUB_EVENT_PATH"
           --output-dir "$RUNNER_TEMP/wpg-scan"
       - name: Transfer bounded scan artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: wpg-scan-${{ github.event.issue.number }}
           path: ${{ runner.temp }}/wpg-scan
@@ -86,7 +86,7 @@ jobs:
           --input "$RUNNER_TEMP/wpg-scan/ai-input.json"
           --output "$RUNNER_TEMP/wpg-ai/ai-summary.md"
       - name: Transfer the optional explanation
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: wpg-ai-${{ github.event.issue.number }}
           path: ${{ runner.temp }}/wpg-ai
